@@ -14,11 +14,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-type Config struct {
-	BotToken string
-	APIBase  string
-}
-
 var (
 	mainMenu = [][]tgbotapi.InlineKeyboardButton{
 		{
@@ -243,14 +238,17 @@ func handleCallback(config *Config, bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQ
 		bot.Send(tgbotapi.NewMessage(cb.Message.Chat.ID, "Enter the amount you want to withdraw (ETB):"))
 	case "play_10", "play_25", "play_50", "play_100":
 		amount := cb.Data[5:]
-		room, err := createRoom(config, cb.From, amount)
-		if err != nil {
-			bot.Send(tgbotapi.NewMessage(cb.Message.Chat.ID, "Failed to create/join room: "+err.Error()))
+		miniAppUrl := config.MiniAppURL
+		if miniAppUrl == "" {
+			miniAppUrl = fmt.Sprintf("https://t.me/%s/rockbingo-miniapp?bet=%s", bot.Self.UserName, amount)
 		} else {
-			inviteLink := generateInviteLink(room.ID)
-			msg := tgbotapi.NewMessage(cb.Message.Chat.ID, "Room created! Room ID: "+strconv.FormatInt(room.ID, 10)+"\nInvite link: "+inviteLink+"\nLaunching the mini app for "+amount+" ETB! (feature coming soon)")
-			bot.Send(msg)
+			miniAppUrl = fmt.Sprintf("%s?bet=%s", miniAppUrl, amount)
 		}
+		webAppButton := tgbotapi.NewInlineKeyboardButtonURL("Open Rock Bingo Mini App", miniAppUrl)
+		row := tgbotapi.NewInlineKeyboardRow(webAppButton)
+		msg := tgbotapi.NewMessage(cb.Message.Chat.ID, fmt.Sprintf("Click below to play Rock Bingo for %s ETB!", amount))
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(row)
+		bot.Send(msg)
 	default:
 		bot.Send(tgbotapi.NewMessage(cb.Message.Chat.ID, "Unknown action."))
 	}
@@ -315,32 +313,6 @@ func handleWithdraw(config *Config, bot *tgbotapi.BotAPI, msg *tgbotapi.Message,
 		return tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("Withdraw failed: %s", string(body)))
 	}
 	return tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("Withdraw request for %.2f ETB received!", amount))
-}
-
-func createRoom(config *Config, user *tgbotapi.User, amount string) (*Room, error) {
-	bet, _ := strconv.ParseFloat(amount, 64)
-	internalID := getInternalUserID(user.ID)
-	if internalID == 0 {
-		return nil, fmt.Errorf("User not registered.")
-	}
-	roomReq := map[string]interface{}{
-		"bet_amount":  bet,
-		"max_players": 10,
-	}
-	b, _ := json.Marshal(roomReq)
-	client := &http.Client{}
-	req, _ := http.NewRequest("POST", config.APIBase+"/api/rooms", bytes.NewBuffer(b))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", fmt.Sprintf("%d", internalID))
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		return nil, fmt.Errorf("API error")
-	}
-	defer resp.Body.Close()
-	var room Room
-	body, _ := ioutil.ReadAll(resp.Body)
-	_ = json.Unmarshal(body, &room)
-	return &room, nil
 }
 
 func generateInviteLink(roomID int64) string {
