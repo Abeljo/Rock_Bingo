@@ -1,0 +1,39 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Output folders
+/bin/
+/build/
+/dist/
+
+# Go modules
+/go.sum
+
+# Dependency directories (vendor/ is used in Go modules)
+/vendor/
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.bak
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS generated files
+*.DS_Store
+
+# Application specific
+
