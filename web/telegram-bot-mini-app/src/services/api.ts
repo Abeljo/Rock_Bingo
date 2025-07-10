@@ -8,8 +8,6 @@ class ApiService {
       ...options.headers,
       'Content-Type': 'application/json',
     };
-    console.log('Fetch endpoint:', `${API_BASE_URL}${endpoint}`);
-    console.log('Fetch options:', { ...options, headers: finalHeaders });
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers: finalHeaders,
@@ -18,8 +16,15 @@ class ApiService {
     if (!response.ok) {
       throw new Error(`HTTP error ${response.status}`);
     }
-
-    return response.json();
+    // If response is 204 No Content or empty, return null
+    if (response.status === 204) {
+      return null;
+    }
+    const text = await response.text();
+    if (!text) {
+      return null;
+    }
+    return JSON.parse(text);
   }
 
   // Auth
