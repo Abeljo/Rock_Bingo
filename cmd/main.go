@@ -8,6 +8,7 @@ import (
 	"rockbingo/internal/telegrambot"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -61,7 +62,11 @@ func main() {
 		log.Printf("%s %s", c.Method(), c.OriginalURL())
 		return c.Next()
 	})
-
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*", // or "*" to allow all
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+	}))
 	// Register all API routes
 	api.RegisterRoutes(app)
 

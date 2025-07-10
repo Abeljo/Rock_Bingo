@@ -11,37 +11,8 @@ interface ApiUser {
 }
 
 function App() {
-  const { user, webApp } = useTelegram();
-  const [apiUser, setApiUser] = useState<ApiUser | null>(null);
+  const { user, webApp, authResponse, authError } = useTelegram();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Register/authenticate user with backend when Telegram user is present
-  useEffect(() => {
-    if (user) {
-      setLoading(true);
-      const apiBaseUrl = (window as any).REACT_APP_API_BASE_URL || 'http://localhost:3000';
-      fetch(`${apiBaseUrl}/api/auth/telegram`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          telegram_id: user.id,
-          username: user.username,
-          first_name: user.first_name,
-          last_name: user.last_name,
-        }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          setApiUser(data);
-          setLoading(false);
-        })
-        .catch((err) => {
-          setError('Failed to authenticate with backend.');
-          setLoading(false);
-        });
-    }
-  }, [user]);
 
   return (
     <div className="min-h-screen flex flex-col bg-brand-cyan text-brand-white">
@@ -68,12 +39,11 @@ function App() {
               <img src={user.photo_url} alt="avatar" className="w-16 h-16 rounded-full mb-2 border-2 border-brand-orange" />
             )}
             <p className="mb-2 text-center text-brand-white/80">@{user.username}</p>
-            {loading && <p className="text-brand-orange">Authenticating...</p>}
-            {error && <p className="text-red-400">{error}</p>}
-            {apiUser && (
+            {authError && <p className="text-red-400">{authError}</p>}
+            {authResponse && (
               <div className="mt-4 w-full">
                 {/* Main game flow will be rendered here next */}
-                <GameRoomFlow apiUser={apiUser} betAmount={10} />
+                <GameRoomFlow apiUser={authResponse} betAmount={10} />
               </div>
             )}
           </div>
