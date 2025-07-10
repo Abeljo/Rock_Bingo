@@ -20,7 +20,8 @@ function App() {
   useEffect(() => {
     if (user) {
       setLoading(true);
-      fetch(`${process.env.REACT_APP_API_BASE_URL || 'http://localhost:3000'}/api/auth/telegram`, {
+      const apiBaseUrl = (window as any).REACT_APP_API_BASE_URL || 'http://localhost:3000';
+      fetch(`${apiBaseUrl}/api/auth/telegram`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

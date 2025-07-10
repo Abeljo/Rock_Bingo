@@ -41,6 +41,10 @@ export function useTelegram() {
   const [webApp, setWebApp] = useState<TelegramWebApp | null>(null);
 
   useEffect(() => {
+    console.log('window.Telegram:', window.Telegram);
+    if (window.Telegram) {
+      console.log('window.Telegram.WebApp:', window.Telegram.WebApp);
+    }
     if (window.Telegram && window.Telegram.WebApp) {
       setWebApp(window.Telegram.WebApp);
       setUser(window.Telegram.WebApp.initDataUnsafe.user || null);
