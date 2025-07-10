@@ -244,7 +244,14 @@ func handleCallback(config *Config, bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQ
 			break
 		}
 		miniAppUrl := fmt.Sprintf("%s?bet=%s", config.MiniAppURL, amount)
-		webAppButton := tgbotapi.NewInlineKeyboardButtonURL("Open Rock Bingo Mini App", miniAppUrl)
+		// webAppButton := tgbotapi.InlineKeyboardButton{
+		// 	Text:   "Open Rock Bingo Mini App",
+		// 	WebApp: &tgbotapi.WebAppInfo{URL: miniAppUrl},
+		// }
+		webAppButton := tgbotapi.NewInlineKeyboardButtonWebApp(
+			"Open Rock Bingo Mini App",
+			tgbotapi.WebAppInfo{URL: miniAppUrl},
+		)
 		row := tgbotapi.NewInlineKeyboardRow(webAppButton)
 		msg := tgbotapi.NewMessage(cb.Message.Chat.ID, fmt.Sprintf("Click below to play Rock Bingo for %s ETB!", amount))
 		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(row)
