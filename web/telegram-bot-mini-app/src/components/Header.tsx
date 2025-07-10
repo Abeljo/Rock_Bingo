@@ -18,8 +18,8 @@ export function Header({ balance, onProfileClick, onWalletClick, onMenuClick }: 
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <Crown className="h-8 w-8 text-purple-600 mr-2" />
-            <h1 className="text-2xl font-bold text-gray-900">BingoMaster</h1>
+            {/* <Crown className="h-8 w-8 text-purple-600 mr-2" /> */}
+            <h1 className="text-2xl font-bold text-gray-900">Rock Bingo</h1>
           </div>
 
           {/* User Info */}

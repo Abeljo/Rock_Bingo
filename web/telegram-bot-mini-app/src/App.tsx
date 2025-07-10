@@ -25,7 +25,7 @@ function App() {
   const [showMenu, setShowMenu] = useState(false);
   
   const { user, authResponse, authError } = useTelegram();
-  const realUserId = getStringUserId(authResponse?.ID);
+  const realUserId = getStringUserId(authResponse?.ID || authResponse?.id);
 
   useEffect(() => {
     if (authResponse?.ID) {

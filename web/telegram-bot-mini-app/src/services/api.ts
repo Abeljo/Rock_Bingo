@@ -4,12 +4,15 @@ const API_BASE_URL = 'http://localhost:3000/api';
 
 class ApiService {
   private async request(endpoint: string, options: RequestInit = {}) {
+    const finalHeaders = {
+      ...options.headers,
+      'Content-Type': 'application/json',
+    };
+    console.log('Fetch endpoint:', `${API_BASE_URL}${endpoint}`);
+    console.log('Fetch options:', { ...options, headers: finalHeaders });
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
       ...options,
+      headers: finalHeaders,
     });
 
     if (!response.ok) {

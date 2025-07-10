@@ -43,13 +43,21 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
     
     setLoading(true);
     try {
-      await apiService.deposit(userId, { amount: parseFloat(amount) });
+      const depositPayload = {
+        amount: parseFloat(amount),
+        currency: 'ETB',
+        transaction_ref: `webapp-${userId}-${Date.now()}`,
+        status: 'completed',
+      };
+      console.log('Deposit payload:', depositPayload);
+      console.log('X-User-ID:', userId);
+      await apiService.deposit(userId, depositPayload);
       await loadWalletData();
       onBalanceUpdate((wallet as any).Balance + parseFloat(amount));
       setAmount('');
       setActiveTab('overview');
     } catch (error) {
-      console.error('Failed to deposit:', error);
+      // Optionally show a user-friendly error message here
     } finally {
       setLoading(false);
     }
@@ -186,26 +194,28 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Transactions</h3>
                 <div className="space-y-3">
-                  {transactions.slice(0, 5).map((transaction) => (
+                  {transactions.slice(0, 5).map((transaction: any) => (
                     <div
-                      key={transaction.id}
+                      key={transaction.ID}
                       className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                     >
                       <div className="flex items-center space-x-3">
-                        {getTransactionIcon(transaction.type)}
+                        {getTransactionIcon(transaction.Type)}
                         <div>
                           <p className="text-sm font-medium text-gray-900">
-                            {transaction.description}
+                            {transaction.Description}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {new Date(transaction.created_at).toLocaleDateString()}
+                            {transaction.CreatedAt
+                              ? new Date(transaction.CreatedAt).toLocaleDateString()
+                              : ''}
                           </p>
                         </div>
                       </div>
-                      <p className={`text-sm font-semibold ${getTransactionColor(transaction.type)}`}>
-                        {transaction.type === 'deposit' || transaction.type === 'win' ? '+' : '-'}
-                        ${transaction.amount !== undefined && transaction.amount !== null
-                          ? transaction.amount.toFixed(2)
+                      <p className={`text-sm font-semibold ${getTransactionColor(transaction.Type)}`}>
+                        {transaction.Type === 'deposit' || transaction.Type === 'win' ? '+' : '-'}
+                        {transaction.Amount !== undefined && transaction.Amount !== null
+                          ? transaction.Amount.toFixed(2)
                           : '0.00'}
                       </p>
                     </div>
@@ -313,26 +323,28 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction History</h3>
                 <div className="space-y-3">
-                  {transactions.map((transaction) => (
+                  {transactions.map((transaction: any) => (
                     <div
-                      key={transaction.id}
+                      key={transaction.ID}
                       className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
                     >
                       <div className="flex items-center space-x-3">
-                        {getTransactionIcon(transaction.type)}
+                        {getTransactionIcon(transaction.Type)}
                         <div>
                           <p className="text-sm font-medium text-gray-900">
-                            {transaction.description}
+                            {transaction.Description}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {new Date(transaction.created_at).toLocaleString()}
+                            {transaction.CreatedAt
+                              ? new Date(transaction.CreatedAt).toLocaleString()
+                              : ''}
                           </p>
                         </div>
                       </div>
-                      <p className={`text-sm font-semibold ${getTransactionColor(transaction.type)}`}>
-                        {transaction.type === 'deposit' || transaction.type === 'win' ? '+' : '-'}
-                        ${transaction.amount !== undefined && transaction.amount !== null
-                          ? transaction.amount.toFixed(2)
+                      <p className={`text-sm font-semibold ${getTransactionColor(transaction.Type)}`}>
+                        {transaction.Type === 'deposit' || transaction.Type === 'win' ? '+' : '-'}
+                        {transaction.Amount !== undefined && transaction.Amount !== null
+                          ? transaction.Amount.toFixed(2)
                           : '0.00'}
                       </p>
                     </div>
