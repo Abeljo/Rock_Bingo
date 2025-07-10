@@ -1,7 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* body {
-  @apply bg-brand-cyan text-brand-white min-h-screen;
-}  */
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer utilities {
+  .animate-bounce-slow {
+    animation: bounce 2s infinite;
+  }
+  
+  .bg-gold-50 {
+    background-color: #fffbeb;
+  }
+  
+  .bg-gold-100 {
+    background-color: #fef3c7;
+  }
+  
+  .bg-gold-500 {
+    background-color: #f59e0b;
+  }
+  
+  .text-gold-500 {
+    color: #f59e0b;
+  }
+  
+  .text-gold-600 {
+    color: #d97706;
+  }
+  
+  .border-gold-200 {
+    border-color: #fde68a;
+  }
+  
+  .shadow-glow {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+  }
+  
+  .gradient-text {
+    background: linear-gradient(45deg, #8b5cf6, #3b82f6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Smooth transitions for all elements */
+* {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes popIn {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slideIn {
+  animation: slideIn 0.3s ease-out;
+}
+
+.animate-popIn {
+  animation: popIn 0.3s ease-out;
+}

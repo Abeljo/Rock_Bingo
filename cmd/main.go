@@ -64,7 +64,7 @@ func main() {
 	})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*", // or "*" to allow all
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-User-ID",
 		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
 	}))
 	// Register all API routes

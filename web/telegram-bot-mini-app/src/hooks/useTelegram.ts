@@ -1,31 +1,5 @@
 import { useEffect, useState } from 'react';
-
-interface TelegramUser {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date?: number;
-  hash?: string;
-}
-
-interface TelegramWebApp {
-  initData: string;
-  initDataUnsafe: {
-    user?: TelegramUser;
-    query_id?: string;
-    auth_date?: number;
-    hash?: string;
-    [key: string]: any;
-  };
-  close: () => void;
-  sendData: (data: string) => void;
-  expand: () => void;
-  isExpanded: boolean;
-  themeParams: Record<string, string>;
-  colorScheme: string;
-}
+import { TelegramUser, TelegramWebApp } from '../types';
 
 declare global {
   interface Window {
@@ -56,7 +30,7 @@ export function useTelegram() {
   useEffect(() => {
     if (!user) return;
 
-    fetch('http://localhost:3000/auth/telegram', {
+    fetch('http://localhost:3000/api/auth/telegram', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

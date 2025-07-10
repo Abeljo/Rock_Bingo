@@ -15,14 +15,24 @@ type User struct {
 }
 
 // BingoRooms table
+//
+//	type BingoRoom struct {
+//		ID             int64     `db:"id"`
+//		BetAmount      float64   `db:"bet_amount"`
+//		CurrentPlayers int       `db:"current_players"`
+//		MaxPlayers     int       `db:"max_players"`
+//		Status         string    `db:"status"`
+//		CreatedAt      time.Time `db:"created_at"`
+//		UpdatedAt      time.Time `db:"updated_at"`
+//	}
 type BingoRoom struct {
-	ID             int64     `db:"id"`
-	BetAmount      float64   `db:"bet_amount"`
-	CurrentPlayers int       `db:"current_players"`
-	MaxPlayers     int       `db:"max_players"`
-	Status         string    `db:"status"`
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
+	ID             int64     `db:"id" json:"id"`
+	BetAmount      float64   `db:"bet_amount" json:"bet_amount"`
+	CurrentPlayers int       `db:"current_players" json:"current_players"`
+	MaxPlayers     int       `db:"max_players" json:"max_players"`
+	Status         string    `db:"status" json:"status"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // BingoCards table
