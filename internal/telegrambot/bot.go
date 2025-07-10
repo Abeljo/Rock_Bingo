@@ -231,19 +231,19 @@ func handleCallback(config *Config, bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQ
 		msg.ParseMode = "Markdown"
 		bot.Send(msg)
 	case "invite":
-		inviteLink := generateInviteLink(cb.From.ID)
+		inviteLink := generateInviteLink(bot.Self.UserName, cb.From.ID)
+
 		bot.Send(tgbotapi.NewMessage(cb.Message.Chat.ID, "Invite your friends with this link: "+inviteLink))
 	case "withdraw":
 		setWithdrawState(cb.From.ID, true)
 		bot.Send(tgbotapi.NewMessage(cb.Message.Chat.ID, "Enter the amount you want to withdraw (ETB):"))
 	case "play_10", "play_25", "play_50", "play_100":
 		amount := cb.Data[5:]
-		miniAppUrl := config.MiniAppURL
-		if miniAppUrl == "" {
-			miniAppUrl = fmt.Sprintf("https://t.me/%s/rockbingo-miniapp?bet=%s", bot.Self.UserName, amount)
-		} else {
-			miniAppUrl = fmt.Sprintf("%s?bet=%s", miniAppUrl, amount)
+		if config.MiniAppURL == "" {
+			bot.Send(tgbotapi.NewMessage(cb.Message.Chat.ID, "Mini App URL is not configured. Please contact support."))
+			break
 		}
+		miniAppUrl := fmt.Sprintf("%s?bet=%s", config.MiniAppURL, amount)
 		webAppButton := tgbotapi.NewInlineKeyboardButtonURL("Open Rock Bingo Mini App", miniAppUrl)
 		row := tgbotapi.NewInlineKeyboardRow(webAppButton)
 		msg := tgbotapi.NewMessage(cb.Message.Chat.ID, fmt.Sprintf("Click below to play Rock Bingo for %s ETB!", amount))
@@ -315,6 +315,6 @@ func handleWithdraw(config *Config, bot *tgbotapi.BotAPI, msg *tgbotapi.Message,
 	return tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("Withdraw request for %.2f ETB received!", amount))
 }
 
-func generateInviteLink(roomID int64) string {
-	return fmt.Sprintf("https://t.me/YourBotUsername?start=room_%d", roomID)
+func generateInviteLink(botUsername string, roomID int64) string {
+	return fmt.Sprintf("https://t.me/%s?start=room_%d", botUsername, roomID)
 }

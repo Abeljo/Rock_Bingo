@@ -48,8 +48,9 @@ func main() {
 
 	// Prepare config for bot
 	botConfig := &telegrambot.Config{
-		BotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
-		APIBase:  os.Getenv("BINGO_API_BASE_URL"),
+		BotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
+		APIBase:    os.Getenv("BINGO_API_BASE_URL"),
+		MiniAppURL: os.Getenv("MINIAPP_URL"),
 	}
 	go telegrambot.StartBot(botConfig)
 
