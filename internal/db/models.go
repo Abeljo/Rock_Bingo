@@ -36,6 +36,17 @@ type BingoCard struct {
 	CreatedAt time.Time       `db:"created_at"  json:"created_at"`
 }
 
+// AvailableCards table
+type AvailableCard struct {
+	ID               int64           `db:"id"                    json:"id"`
+	RoomID           int64           `db:"room_id"               json:"room_id"`
+	CardNumber       int             `db:"card_number"           json:"card_number"`
+	CardData         json.RawMessage `db:"card_data"             json:"card_data"`
+	IsSelected       bool            `db:"is_selected"           json:"is_selected"`
+	SelectedByUserID *int64          `db:"selected_by_user_id"   json:"selected_by_user_id"`
+	CreatedAt        time.Time       `db:"created_at"            json:"created_at"`
+}
+
 // GameSessions table
 type GameSession struct {
 	ID               int64           `db:"id"                  json:"id"`

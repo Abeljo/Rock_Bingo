@@ -106,12 +106,24 @@ func (s *RoomStore) FindOrCreateRoom(ctx context.Context, betAmount float64) (*B
 		ORDER BY created_at ASC 
 		LIMIT 1
 	`, betAmount)
-	
+
 	if err == nil {
 		// Found an existing room
 		return &room, nil
 	}
-	
+
 	// No existing room found, create a new one
-	return s.CreateRoom(ctx, betAmount, 10) // Default max players of 10
+	newRoom, err := s.CreateRoom(ctx, betAmount, 10) // Default max players of 10
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize available cards for the new room
+	cardStore := &CardStore{DB: s.DB}
+	err = cardStore.InitializeAvailableCards(ctx, newRoom.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return newRoom, nil
 }

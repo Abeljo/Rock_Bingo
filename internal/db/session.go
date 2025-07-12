@@ -101,13 +101,16 @@ func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, er
 	return drawnNumber, nil
 }
 
-// Mark a number on a card
-func (s *SessionStore) MarkNumber(ctx context.Context, cardID int64, number int) error {
+// Mark a number on a user's selected card
+func (s *SessionStore) MarkNumberOnCard(ctx context.Context, userID int64, cardNumber int, number int) error {
 	var cardData []byte
-	err := s.DB.GetContext(ctx, &cardData, `SELECT card_data FROM bingo_cards WHERE id = $1`, cardID)
+	err := s.DB.GetContext(ctx, &cardData, `
+		SELECT card_data FROM available_cards 
+		WHERE selected_by_user_id = $1 AND card_number = $2
+	`, userID, cardNumber)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return errors.New("card not found")
+			return errors.New("card not found or not selected by user")
 		}
 		return err
 	}
@@ -125,14 +128,89 @@ func (s *SessionStore) MarkNumber(ctx context.Context, cardID int64, number int)
 	}
 
 	_, err = s.DB.ExecContext(ctx, `
-		UPDATE bingo_cards SET card_data = $1 WHERE id = $2
-	`, updatedCardData, cardID)
+		UPDATE available_cards SET card_data = $1 
+		WHERE selected_by_user_id = $2 AND card_number = $3
+	`, updatedCardData, userID, cardNumber)
 	return err
 }
 
-// Claim bingo (set is_winner true)
-func (s *SessionStore) ClaimBingo(ctx context.Context, cardID int64) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE bingo_cards SET is_winner = TRUE WHERE id = $1`, cardID)
+// Claim bingo and distribute winnings
+func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber int) error {
+	// Get the room and session info
+	var roomID int64
+	var sessionID int64
+	err := s.DB.GetContext(ctx, &roomID, `
+		SELECT room_id FROM available_cards 
+		WHERE selected_by_user_id = $1 AND card_number = $2
+	`, userID, cardNumber)
+	if err != nil {
+		return err
+	}
+
+	err = s.DB.GetContext(ctx, &sessionID, `
+		SELECT id FROM game_sessions 
+		WHERE room_id = $1 AND status = 'active' 
+		ORDER BY created_at DESC LIMIT 1
+	`, roomID)
+	if err != nil {
+		return err
+	}
+
+	// Get room bet amount
+	var betAmount float64
+	err = s.DB.GetContext(ctx, &betAmount, `
+		SELECT bet_amount FROM bingo_rooms WHERE id = $1
+	`, roomID)
+	if err != nil {
+		return err
+	}
+
+	// Get number of players in the room
+	var playerCount int
+	err = s.DB.GetContext(ctx, &playerCount, `
+		SELECT COUNT(DISTINCT selected_by_user_id) FROM available_cards 
+		WHERE room_id = $1 AND is_selected = true
+	`, roomID)
+	if err != nil {
+		return err
+	}
+
+	// Calculate winnings (total pot divided by winners)
+	totalPot := betAmount * float64(playerCount)
+	winningAmount := totalPot // For now, winner takes all
+
+	// Record the winner
+	_, err = s.DB.ExecContext(ctx, `
+		INSERT INTO winners (session_id, user_id, winnings, won_at)
+		VALUES ($1, $2, $3, NOW())
+	`, sessionID, userID, winningAmount)
+	if err != nil {
+		return err
+	}
+
+	// Add winnings to user's wallet
+	_, err = s.DB.ExecContext(ctx, `
+		UPDATE wallets SET balance = balance + $1, updated_at = NOW() 
+		WHERE user_id = $2
+	`, winningAmount, userID)
+	if err != nil {
+		return err
+	}
+
+	// Record transaction
+	_, err = s.DB.ExecContext(ctx, `
+		INSERT INTO transactions (user_id, type, amount, created_at)
+		VALUES ($1, 'win', $2, NOW())
+	`, userID, winningAmount)
+	if err != nil {
+		return err
+	}
+
+	// End the session
+	_, err = s.DB.ExecContext(ctx, `
+		UPDATE game_sessions SET status = 'completed', session_end_time = NOW() 
+		WHERE id = $1
+	`, sessionID)
 	return err
 }
 

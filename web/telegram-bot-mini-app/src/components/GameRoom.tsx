@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trophy, Users, Timer, Sparkles, ArrowLeft } from 'lucide-react';
+import { Trophy, Users, Timer, Sparkles, ArrowLeft, Play, Check } from 'lucide-react';
 import { BingoCard } from './BingoCard';
-import { NumberCaller } from './NumberCaller';
-import { Room, BingoCard as BingoCardType, GameSession, Player, User } from '../types';
+import { CardSelection } from './CardSelection';
+import { Room, GameSession, Player, User } from '../types';
 import { apiService } from '../services/api';
 import { useTelegram } from '../hooks/useTelegram';
 
@@ -14,7 +14,7 @@ interface GameRoomProps {
 export function GameRoom({ room, onBack }: GameRoomProps) {
   const { user: telegramUser } = useTelegram();
   const [user, setUser] = useState<User | null>(null);
-  const [card, setCard] = useState<BingoCardType | null>(null);
+  const [selectedCard, setSelectedCard] = useState<any>(null);
   const [session, setSession] = useState<GameSession | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +22,8 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const [gameTime, setGameTime] = useState(0);
   const [winner, setWinner] = useState<Player | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [showCardSelection, setShowCardSelection] = useState(false);
+  const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
 
   // Authenticate and set user
   useEffect(() => {
@@ -44,39 +46,35 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       // 1. Join the room
       await apiService.joinRoom(room.id, user.id);
 
-      // 2. Get all cards in the room
-      const allCards = await apiService.getRoomCards(room.id);
-      console.log('All cards in room:', allCards);
-      
-      // 3. Find user's card or create one
-      let myCard = null;
-      if (allCards && Array.isArray(allCards)) {
-        myCard = allCards.find((c: any) => c.user_id === user.id);
+      // 2. Check if user has selected a card
+      try {
+        const myCard = await apiService.getMyCard(room.id, user.id);
+        setSelectedCard(myCard);
+      } catch {
+        // No card selected yet, show card selection
+        setShowCardSelection(true);
+        setLoading(false);
+        return;
       }
-      console.log('My card found:', myCard);
-      
-      if (!myCard) {
-        console.log('Creating new card for user');
-        myCard = await apiService.createCard(room.id, user.id);
-        console.log('New card created:', myCard);
-      }
-      setCard(myCard);
 
-      // 4. Get or create session for the room
+      // 3. Get or create session for the room
       let gameSession = null;
       try {
         gameSession = await apiService.getSession(room.id);
+        if (gameSession && gameSession.drawn_numbers) {
+          setDrawnNumbers(gameSession.drawn_numbers);
+        }
       } catch {
         // If not found, do not create session yet (let host start it)
         gameSession = null;
       }
       setSession(gameSession);
 
-      // 5. Get players
+      // 4. Get players
       const playersData = await apiService.getRoomPlayers(room.id);
       setPlayers(playersData);
 
-      // 6. Get winners if session exists
+      // 5. Get winners if session exists
       if (gameSession) {
         const winners = await apiService.getWinners(gameSession.id);
         if (winners && winners.length > 0) {
@@ -119,10 +117,10 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   }, [session, room.id, user?.id]);
 
   // Game actions
-  const handleMarkNumber = async (number: number) => {
-    if (!session || !card || !user) return;
+  const handleMarkNumber = async (row: number, col: number, number: number) => {
+    if (!session || !selectedCard || !user) return;
     try {
-      await apiService.markNumber(session.id, card.id, number, user.id);
+      await apiService.markNumber(session.id, selectedCard.card_number, number, user.id);
       setActionMessage('Number marked!');
       setTimeout(() => setActionMessage(null), 1500);
       loadGameData();
@@ -134,8 +132,9 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const handleDrawNumber = async () => {
     if (!session || !user) return;
     try {
-      await apiService.drawNumber(session.id, user.id);
-      setActionMessage('Number drawn!');
+      const result = await apiService.drawNumber(session.id, user.id);
+      setDrawnNumbers(prev => [...prev, result.number]);
+      setActionMessage(`Number ${result.number} drawn!`);
       setTimeout(() => setActionMessage(null), 1500);
       loadGameData();
     } catch (error) {
@@ -144,9 +143,9 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   };
 
   const handleClaimBingo = async () => {
-    if (!session || !card || !user) return;
+    if (!session || !selectedCard || !user) return;
     try {
-      await apiService.claimBingo(session.id, card.id, user.id);
+      await apiService.claimBingo(session.id, selectedCard.card_number, user.id);
       setActionMessage('Bingo claimed! Waiting for validation...');
       setTimeout(() => setActionMessage(null), 2000);
       loadGameData();
@@ -168,6 +167,11 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     }
   };
 
+  const handleCardSelected = (cardNumber: number) => {
+    setShowCardSelection(false);
+    loadGameData();
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -180,6 +184,17 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     if (session.status === 'completed') gamePhase = 'finished';
     else if (session.status === 'active') gamePhase = 'active';
     else gamePhase = 'ready';
+  }
+
+  if (showCardSelection) {
+    return (
+      <CardSelection
+        roomId={room.id}
+        userId={user?.id || ''}
+        onCardSelected={handleCardSelected}
+        onBack={onBack}
+      />
+    );
   }
 
   if (loading) {
@@ -207,7 +222,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-1">
             <Users className="h-5 w-5" />
-            <span>{players.length}</span>
+            <span>{(players || []).length}</span>
           </div>
           <div className="flex items-center space-x-1">
             <Trophy className="h-5 w-5" />
@@ -265,37 +280,73 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2">
-            {card && session && (
+            {selectedCard && (
               <BingoCard 
-                card={card} 
-                onMarkNumber={handleMarkNumber} 
-                drawnNumbers={session.drawn_numbers || session.called_numbers || []} 
+                cardData={selectedCard.card_data}
+                cardNumber={selectedCard.card_number}
+                onNumberClick={handleMarkNumber}
+                disabled={!session || session.status !== 'active'}
               />
             )}
-            {card && (
-              <div className="mt-2 text-center text-gray-600 text-sm">Your Card ID: <span className="font-mono">{card.id}</span></div>
+            {selectedCard && (
+              <div className="mt-2 text-center text-gray-600 text-sm">
+                Your Card: #{selectedCard.card_number}
+              </div>
             )}
           </div>
           <div className="space-y-4">
-            {session && (
-              <NumberCaller 
-                currentNumber={(session.drawn_numbers || session.called_numbers || [])[((session.drawn_numbers || session.called_numbers || []).length - 1)]} 
-                calledNumbers={session.drawn_numbers || session.called_numbers || []} 
-                onDrawNumber={handleDrawNumber}
-                isGameActive={session.status === 'active'}
-              />
+            {/* Drawn Numbers Display */}
+            {session && session.status === 'active' && (
+              <div className="bg-white rounded-lg p-4 shadow">
+                <h3 className="font-bold mb-3 text-center">Drawn Numbers</h3>
+                <div className="grid grid-cols-5 gap-2 max-h-40 overflow-y-auto">
+                  {(drawnNumbers || []).map((number, index) => (
+                    <div
+                      key={index}
+                      className="bg-blue-100 text-blue-800 text-center py-2 rounded font-bold"
+                    >
+                      {number}
+                    </div>
+                  ))}
+                </div>
+                {(drawnNumbers || []).length === 0 && (
+                  <p className="text-gray-500 text-center text-sm">No numbers drawn yet</p>
+                )}
+              </div>
             )}
-            <button
-              onClick={handleClaimBingo}
-              disabled={!session || session.status !== 'active'}
-              className="w-full py-3 px-4 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 disabled:bg-gray-400"
-            >
-              Claim Bingo
-            </button>
-            <div>
-              <h3 className="font-bold mb-2">Players</h3>
-              <ul className="bg-white p-2 rounded-lg shadow-inner">
-                {players.map(p => <li key={p.id}>{p.first_name}</li>)}
+
+            {/* Game Controls */}
+            {session && session.status === 'active' && (
+              <div className="space-y-3">
+                <button
+                  onClick={handleDrawNumber}
+                  className="w-full py-3 px-4 bg-purple-500 text-white font-bold rounded-lg shadow-md hover:bg-purple-600 transition-colors"
+                >
+                  <Play className="h-5 w-5 inline mr-2" />
+                  Draw Number
+                </button>
+                <button
+                  onClick={handleClaimBingo}
+                  className="w-full py-3 px-4 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 transition-colors"
+                >
+                  <Check className="h-5 w-5 inline mr-2" />
+                  Claim Bingo
+                </button>
+              </div>
+            )}
+
+            {/* Players List */}
+            <div className="bg-white rounded-lg p-4 shadow">
+              <h3 className="font-bold mb-3">Players ({(players || []).length})</h3>
+              <ul className="space-y-2">
+                {(players || []).map(player => (
+                  <li key={player.id} className="flex items-center justify-between">
+                    <span className="text-gray-700">{player.first_name}</span>
+                    {player.user_id === user?.id && (
+                      <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">You</span>
+                    )}
+                  </li>
+                ))}
               </ul>
             </div>
           </div>

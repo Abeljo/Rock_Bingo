@@ -116,6 +116,24 @@ class ApiService {
     return this.request(`/rooms/${id}/cards`);
   }
 
+  async getAvailableCards(roomId: string): Promise<any[]> {
+    return this.request(`/rooms/${roomId}/available-cards`);
+  }
+
+  async selectCard(roomId: string, cardNumber: number, userId?: string): Promise<void> {
+    return this.request(`/rooms/${roomId}/select-card`, {
+      method: 'POST',
+      headers: userId ? { 'X-User-ID': userId } : {},
+      body: JSON.stringify({ card_number: cardNumber }),
+    });
+  }
+
+  async getMyCard(roomId: string, userId?: string): Promise<any> {
+    return this.request(`/rooms/${roomId}/my-card`, {
+      headers: userId ? { 'X-User-ID': userId } : {},
+    });
+  }
+
   // Cards
   async createCard(roomId: string, userId?: string): Promise<BingoCard> {
     return this.request('/cards', {
@@ -145,19 +163,19 @@ class ApiService {
     });
   }
 
-  async markNumber(sessionId: string, cardId: string, number: number, userId?: string): Promise<void> {
+  async markNumber(sessionId: string, cardNumber: number, number: number, userId?: string): Promise<void> {
     return this.request(`/sessions/${sessionId}/mark`, {
       method: 'POST',
       headers: userId ? { 'X-User-ID': userId } : {},
-      body: JSON.stringify({ card_id: cardId, number }),
+      body: JSON.stringify({ card_number: cardNumber, number }),
     });
   }
 
-  async claimBingo(sessionId: string, cardId: string, userId?: string): Promise<void> {
+  async claimBingo(sessionId: string, cardNumber: number, userId?: string): Promise<void> {
     return this.request(`/sessions/${sessionId}/bingo`, {
       method: 'POST',
       headers: userId ? { 'X-User-ID': userId } : {},
-      body: JSON.stringify({ card_id: cardId }),
+      body: JSON.stringify({ card_number: cardNumber }),
     });
   }
 

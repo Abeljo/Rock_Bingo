@@ -58,3 +58,99 @@ func (s *CardStore) GetAllCardsInRoom(ctx context.Context, roomID int64) ([]Bing
 	err := s.DB.SelectContext(ctx, &cards, `SELECT * FROM bingo_cards WHERE room_id = $1`, roomID)
 	return cards, err
 }
+
+// Initialize available cards for a room
+func (s *CardStore) InitializeAvailableCards(ctx context.Context, roomID int64) error {
+	// Generate 100 available cards
+	cards := game.GenerateAvailableCards()
+
+	// Insert all cards into the database
+	for i, card := range cards {
+		cardData, err := card.ToJSON()
+		if err != nil {
+			return err
+		}
+
+		_, err = s.DB.ExecContext(ctx, `
+			INSERT INTO available_cards (room_id, card_number, card_data)
+			VALUES ($1, $2, $3)
+		`, roomID, i+1, cardData)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Get available cards for a room
+func (s *CardStore) GetAvailableCards(ctx context.Context, roomID int64) ([]AvailableCard, error) {
+	// First check if the table exists
+	var tableExists bool
+	err := s.DB.GetContext(ctx, &tableExists, `
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = 'public' 
+			AND table_name = 'available_cards'
+		)
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	if !tableExists {
+		// Table doesn't exist, initialize it
+		err = s.InitializeAvailableCards(ctx, roomID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var cards []AvailableCard
+	err = s.DB.SelectContext(ctx, &cards, `
+		SELECT * FROM available_cards 
+		WHERE room_id = $1 
+		ORDER BY card_number
+	`, roomID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// If no cards found, initialize them
+	if len(cards) == 0 {
+		err = s.InitializeAvailableCards(ctx, roomID)
+		if err != nil {
+			return nil, err
+		}
+		// Fetch the cards again
+		err = s.DB.SelectContext(ctx, &cards, `
+			SELECT * FROM available_cards 
+			WHERE room_id = $1 
+			ORDER BY card_number
+		`, roomID)
+	}
+	
+	return cards, err
+}
+
+// Select a card for a user
+func (s *CardStore) SelectCard(ctx context.Context, roomID int64, cardNumber int, userID int64) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE available_cards 
+		SET is_selected = true, selected_by_user_id = $1
+		WHERE room_id = $2 AND card_number = $3 AND is_selected = false
+	`, userID, roomID, cardNumber)
+	return err
+}
+
+// Get user's selected card
+func (s *CardStore) GetUserSelectedCard(ctx context.Context, roomID, userID int64) (*AvailableCard, error) {
+	var card AvailableCard
+	err := s.DB.GetContext(ctx, &card, `
+		SELECT * FROM available_cards 
+		WHERE room_id = $1 AND selected_by_user_id = $2
+	`, roomID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &card, nil
+}

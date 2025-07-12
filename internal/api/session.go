@@ -55,29 +55,39 @@ func DrawNumberHandler(c *fiber.Ctx) error {
 }
 
 func MarkNumberHandler(c *fiber.Ctx) error {
+	userID, err := getUserID(c)
+	if err != nil {
+		return err
+	}
+
 	type req struct {
-		CardID int64 `json:"card_id"`
-		Number int   `json:"number"`
+		CardNumber int `json:"card_number"`
+		Number     int `json:"number"`
 	}
 	var body req
 	if err := c.BodyParser(&body); err != nil {
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
-	if err := sessionStore.MarkNumber(context.Background(), body.CardID, body.Number); err != nil {
+	if err := sessionStore.MarkNumberOnCard(context.Background(), userID, body.CardNumber, body.Number); err != nil {
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 	return c.SendStatus(http.StatusNoContent)
 }
 
 func ClaimBingoHandler(c *fiber.Ctx) error {
+	userID, err := getUserID(c)
+	if err != nil {
+		return err
+	}
+
 	type req struct {
-		CardID int64 `json:"card_id"`
+		CardNumber int `json:"card_number"`
 	}
 	var body req
 	if err := c.BodyParser(&body); err != nil {
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
-	if err := sessionStore.ClaimBingo(context.Background(), body.CardID); err != nil {
+	if err := sessionStore.ClaimBingo(context.Background(), userID, body.CardNumber); err != nil {
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 	return c.SendStatus(http.StatusNoContent)
@@ -103,4 +113,3 @@ func RegisterSessionRoutes(router fiber.Router) {
 	router.Post("/sessions/:id/bingo", ClaimBingoHandler)
 	router.Get("/sessions/:id/winners", GetWinnersHandler)
 }
-
