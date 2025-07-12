@@ -17,13 +17,23 @@ type User struct {
 
 // BingoRooms table
 type BingoRoom struct {
-	ID             int64     `db:"id"              json:"id"`
-	BetAmount      float64   `db:"bet_amount"      json:"bet_amount"`
-	CurrentPlayers int       `db:"current_players" json:"current_players"`
-	MaxPlayers     int       `db:"max_players"     json:"max_players"`
-	Status         string    `db:"status"          json:"status"`
-	CreatedAt      time.Time `db:"created_at"      json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"      json:"updated_at"`
+	ID             int64      `db:"id"              json:"id"`
+	BetAmount      float64    `db:"bet_amount"      json:"bet_amount"`
+	CurrentPlayers int        `db:"current_players" json:"current_players"`
+	MaxPlayers     int        `db:"max_players"     json:"max_players"`
+	Status         string     `db:"status"          json:"status"`
+	CountdownStart *time.Time `db:"countdown_start" json:"countdown_start"`
+	GameStartTime  *time.Time `db:"game_start_time" json:"game_start_time"`
+	CreatedAt      time.Time  `db:"created_at"      json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at"      json:"updated_at"`
+}
+
+// CountdownInfo represents countdown information for a room
+type CountdownInfo struct {
+	IsActive      bool       `json:"is_active"`
+	TimeLeft      int        `json:"time_left"`
+	GameStarted   bool       `json:"game_started"`
+	GameStartTime *time.Time `json:"game_start_time"`
 }
 
 // BingoCards table

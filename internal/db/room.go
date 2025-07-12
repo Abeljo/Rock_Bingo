@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -18,8 +19,8 @@ func NewRoomStore(db *sqlx.DB) *RoomStore {
 func (s *RoomStore) CreateRoom(ctx context.Context, betAmount float64, maxPlayers int) (*BingoRoom, error) {
 	var room BingoRoom
 	err := s.DB.GetContext(ctx, &room, `
-		INSERT INTO bingo_rooms (bet_amount, max_players, current_players, status)
-		VALUES ($1, $2, 1, 'waiting')
+		INSERT INTO bingo_rooms (bet_amount, max_players, current_players, status, countdown_start, game_start_time)
+		VALUES ($1, $2, 0, 'waiting', NULL, NULL)
 		RETURNING *
 	`, betAmount, maxPlayers)
 	if err != nil {
@@ -45,11 +46,38 @@ func (s *RoomStore) GetRoom(ctx context.Context, id int64) (*BingoRoom, error) {
 	return &room, nil
 }
 
-// Join a room (increment current_players)
+// Join a room (increment current_players and start countdown if first player)
 func (s *RoomStore) JoinRoom(ctx context.Context, roomID int64) error {
-	_, err := s.DB.ExecContext(ctx, `
-		UPDATE bingo_rooms SET current_players = current_players + 1 WHERE id = $1 AND current_players < max_players
-	`, roomID)
+	// First, get the current room state
+	var room BingoRoom
+	err := s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
+	if err != nil {
+		return err
+	}
+
+	// If this is the first player joining, start the countdown
+	if room.CurrentPlayers == 0 {
+		now := time.Now()
+		countdownStart := now
+		gameStartTime := now.Add(60 * time.Second) // 60 second countdown
+
+		_, err = s.DB.ExecContext(ctx, `
+			UPDATE bingo_rooms 
+			SET current_players = current_players + 1, 
+				countdown_start = $1, 
+				game_start_time = $2,
+				updated_at = NOW()
+			WHERE id = $3 AND current_players < max_players
+		`, countdownStart, gameStartTime, roomID)
+	} else {
+		// Just increment player count
+		_, err = s.DB.ExecContext(ctx, `
+			UPDATE bingo_rooms 
+			SET current_players = current_players + 1,
+				updated_at = NOW()
+			WHERE id = $1 AND current_players < max_players
+		`, roomID)
+	}
 	return err
 }
 
@@ -126,4 +154,31 @@ func (s *RoomStore) FindOrCreateRoom(ctx context.Context, betAmount float64) (*B
 	}
 
 	return newRoom, nil
+}
+
+// Get countdown information for a room
+func (s *RoomStore) GetCountdownInfo(ctx context.Context, roomID int64) (*CountdownInfo, error) {
+	var room BingoRoom
+	err := s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
+	if err != nil {
+		return nil, err
+	}
+
+	if room.CountdownStart == nil || room.GameStartTime == nil {
+		return &CountdownInfo{
+			IsActive:    false,
+			TimeLeft:    0,
+			GameStarted: false,
+		}, nil
+	}
+
+	now := time.Now()
+	timeLeft := int(room.GameStartTime.Sub(now).Seconds())
+
+	return &CountdownInfo{
+		IsActive:      timeLeft > 0 && room.Status == "waiting",
+		TimeLeft:      timeLeft,
+		GameStarted:   now.After(*room.GameStartTime),
+		GameStartTime: room.GameStartTime,
+	}, nil
 }

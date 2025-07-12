@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Trophy, Users, Timer, Sparkles, ArrowLeft, Play, Check } from 'lucide-react';
 import { BingoCard } from './BingoCard';
 import { CardSelection } from './CardSelection';
+import { Countdown } from './Countdown';
 import { Room, GameSession, Player, User } from '../types';
 import { apiService } from '../services/api';
 import { useTelegram } from '../hooks/useTelegram';
@@ -24,6 +25,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [showCardSelection, setShowCardSelection] = useState(false);
   const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
+  const [countdown, setCountdown] = useState<any>(null);
 
   // Authenticate and set user
   useEffect(() => {
@@ -60,7 +62,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       // 3. Get or create session for the room
       let gameSession = null;
       try {
-        gameSession = await apiService.getSession(room.id);
+        gameSession = await apiService.getRoomSession(room.id);
         if (gameSession && gameSession.drawn_numbers) {
           setDrawnNumbers(gameSession.drawn_numbers);
         }
@@ -74,7 +76,17 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       const playersData = await apiService.getRoomPlayers(room.id);
       setPlayers(playersData);
 
-      // 5. Get winners if session exists
+      // 5. Get countdown information
+      try {
+        const countdownData = await apiService.getRoomCountdown(room.id);
+        console.log('Countdown data:', countdownData);
+        setCountdown(countdownData);
+      } catch (err) {
+        console.log('Countdown error:', err);
+        setCountdown(null);
+      }
+
+      // 6. Get winners if session exists
       if (gameSession) {
         const winners = await apiService.getWinners(gameSession.id);
         if (winners && winners.length > 0) {
@@ -98,20 +110,24 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     // eslint-disable-next-line
   }, [user, room.id]);
 
-  // Poll session and players for updates
+  // Poll session, players, and countdown for updates
   useEffect(() => {
-    if (!session) return;
     const timer = setInterval(() => {
-      setGameTime((prev) => prev + 5);
-      apiService.getSession(session.id).then(setSession).catch(() => {});
+      if (session) {
+        setGameTime((prev) => prev + 5);
+        apiService.getSession(session.id).then(setSession).catch(() => {});
+        apiService.getWinners(session.id).then(winners => {
+          if (winners && winners.length > 0) {
+            setWinner(winners.find((w: any) => w.user_id === user?.id) || null);
+          } else {
+            setWinner(null);
+          }
+        }).catch(() => {});
+      }
+      
+      // Always poll countdown and players
+      apiService.getRoomCountdown(room.id).then(setCountdown).catch(() => {});
       apiService.getRoomPlayers(room.id).then(setPlayers).catch(() => {});
-      apiService.getWinners(session.id).then(winners => {
-        if (winners && winners.length > 0) {
-          setWinner(winners.find((w: any) => w.user_id === user?.id) || null);
-        } else {
-          setWinner(null);
-        }
-      }).catch(() => {});
     }, 5000);
     return () => clearInterval(timer);
   }, [session, room.id, user?.id]);
@@ -172,6 +188,31 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     loadGameData();
   };
 
+  const handleGameStart = () => {
+    // When countdown reaches zero, automatically start the game
+    if (!session && countdown?.game_started) {
+      handleStartGame();
+    }
+  };
+
+  // Auto-draw numbers when game is active
+  useEffect(() => {
+    if (!session || session.status !== 'active') return;
+
+    const autoDrawInterval = setInterval(async () => {
+      try {
+        const result = await apiService.autoDrawNumber(session.id);
+        setDrawnNumbers(prev => [...prev, result.number]);
+        setActionMessage(`Number ${result.number} called automatically!`);
+        setTimeout(() => setActionMessage(null), 2000);
+      } catch (error) {
+        console.error('Auto-draw failed:', error);
+      }
+    }, 5000); // Draw a number every 5 seconds
+
+    return () => clearInterval(autoDrawInterval);
+  }, [session]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -179,11 +220,13 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   };
 
   // Determine game phase
-  let gamePhase: 'waiting' | 'ready' | 'active' | 'finished' = 'waiting';
+  let gamePhase: 'waiting' | 'countdown' | 'ready' | 'active' | 'finished' = 'waiting';
   if (session) {
     if (session.status === 'completed') gamePhase = 'finished';
     else if (session.status === 'active') gamePhase = 'active';
     else gamePhase = 'ready';
+  } else if (countdown?.is_active) {
+    gamePhase = 'countdown';
   }
 
   if (showCardSelection) {
@@ -214,6 +257,20 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Countdown Component */}
+      {countdown && (
+        <>
+          <div className="fixed top-16 left-4 z-50 bg-white p-2 rounded text-xs">
+            Debug: {JSON.stringify(countdown)}
+          </div>
+          <Countdown
+            timeLeft={countdown.time_left}
+            isActive={countdown.is_active}
+            onGameStart={handleGameStart}
+          />
+        </>
+      )}
+      
       <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
         <button onClick={onBack} className="p-2 rounded-full hover:bg-gray-200">
           <ArrowLeft className="h-6 w-6" />
@@ -250,6 +307,12 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
           <div className="mb-4 text-center text-gray-700 font-semibold">
             Waiting for players to join...<br />
             Share the room link to invite friends!
+          </div>
+        )}
+        {gamePhase === 'countdown' && (
+          <div className="mb-4 text-center text-blue-700 font-semibold">
+            Countdown started! Select your card quickly!<br />
+            Game will start automatically in {countdown?.time_left || 0} seconds
           </div>
         )}
         {gamePhase === 'ready' && (

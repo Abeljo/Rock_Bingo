@@ -105,10 +105,43 @@ func GetWinnersHandler(c *fiber.Ctx) error {
 	return c.JSON(winners)
 }
 
+func GetCurrentSessionForRoomHandler(c *fiber.Ctx) error {
+	roomID, err := strconv.ParseInt(c.Params("roomId"), 10, 64)
+	if err != nil {
+		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
+	}
+	// Try to get the latest active session, or the most recent session if none are active
+	session, err := sessionStore.GetLatestSessionForRoom(context.Background(), roomID)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, "No session found for this room")
+	}
+	return c.JSON(session)
+}
+
+func AutoDrawNumberHandler(c *fiber.Ctx) error {
+	sessionID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(http.StatusBadRequest, "Invalid session ID")
+	}
+	
+	// Draw a number automatically
+	number, err := sessionStore.DrawNumber(context.Background(), sessionID)
+	if err != nil {
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
+	}
+	
+	return c.JSON(fiber.Map{
+		"number": number,
+		"message": "Number drawn automatically",
+	})
+}
+
 func RegisterSessionRoutes(router fiber.Router) {
 	router.Post("/sessions", CreateSessionHandler)
 	router.Get("/sessions/:id", GetSessionHandler)
+	router.Get("/rooms/:roomId/session", GetCurrentSessionForRoomHandler)
 	router.Post("/sessions/:id/draw", DrawNumberHandler)
+	router.Post("/sessions/:id/auto-draw", AutoDrawNumberHandler)
 	router.Post("/sessions/:id/mark", MarkNumberHandler)
 	router.Post("/sessions/:id/bingo", ClaimBingoHandler)
 	router.Get("/sessions/:id/winners", GetWinnersHandler)

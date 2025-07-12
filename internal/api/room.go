@@ -100,6 +100,18 @@ func GetRoomPlayersHandler(c *fiber.Ctx) error {
 	return c.JSON(players)
 }
 
+func GetCountdownHandler(c *fiber.Ctx) error {
+	roomID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
+	}
+	countdown, err := roomStore.GetCountdownInfo(context.Background(), roomID)
+	if err != nil {
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(countdown)
+}
+
 func GetRoomCardsHandler(c *fiber.Ctx) error {
 	roomID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
@@ -172,6 +184,7 @@ func RegisterRoomRoutes(router fiber.Router) {
 	router.Post("/rooms/:id/leave", LeaveRoomHandler)
 	router.Post("/rooms/:id/start", StartRoomHandler)
 	router.Get("/rooms/:id/players", GetRoomPlayersHandler)
+	router.Get("/rooms/:id/countdown", GetCountdownHandler)
 	router.Get("/rooms/:id/cards", GetRoomCardsHandler)
 	router.Post("/rooms/:id/bet", PlaceBetHandler)
 }

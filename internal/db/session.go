@@ -40,6 +40,15 @@ func (s *SessionStore) StartSession(ctx context.Context, roomID int64) (*GameSes
 	if err != nil {
 		return nil, err
 	}
+
+	// Update room status to active
+	_, err = s.DB.ExecContext(ctx, `
+		UPDATE bingo_rooms SET status = 'active', updated_at = NOW() WHERE id = $1
+	`, roomID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &session, nil
 }
 
@@ -219,4 +228,19 @@ func (s *SessionStore) GetWinners(ctx context.Context, sessionID int64) ([]Winne
 	var winners []Winner
 	err := s.DB.SelectContext(ctx, &winners, `SELECT * FROM winners WHERE session_id = $1`, sessionID)
 	return winners, err
+}
+
+// GetLatestSessionForRoom returns the latest (active or most recent) session for a room
+func (s *SessionStore) GetLatestSessionForRoom(ctx context.Context, roomID int64) (*GameSession, error) {
+	var session GameSession
+	err := s.DB.GetContext(ctx, &session, `
+		SELECT * FROM game_sessions
+		WHERE room_id = $1
+		ORDER BY (status = 'active') DESC, created_at DESC
+		LIMIT 1
+	`, roomID)
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
 }

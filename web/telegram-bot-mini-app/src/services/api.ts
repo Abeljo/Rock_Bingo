@@ -112,6 +112,10 @@ class ApiService {
     return this.request(`/rooms/${id}/players`);
   }
 
+  async getRoomCountdown(id: string): Promise<any> {
+    return this.request(`/rooms/${id}/countdown`);
+  }
+
   async getRoomCards(id: string): Promise<BingoCard[]> {
     return this.request(`/rooms/${id}/cards`);
   }
@@ -160,6 +164,12 @@ class ApiService {
     return this.request(`/sessions/${id}/draw`, { 
       method: 'POST',
       headers: userId ? { 'X-User-ID': userId } : {},
+    });
+  }
+
+  async autoDrawNumber(id: string): Promise<{ number: number }> {
+    return this.request(`/sessions/${id}/auto-draw`, { 
+      method: 'POST',
     });
   }
 
@@ -215,6 +225,10 @@ class ApiService {
 
   async getVersion() {
     return this.request('/version');
+  }
+
+  async getRoomSession(roomId: string): Promise<any> {
+    return this.request(`/rooms/${roomId}/session`);
   }
 }
 
