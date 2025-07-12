@@ -154,14 +154,87 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   const handleClaimBingo = async () => {
     if (!session || !selectedCard || !user) return;
+    
+    // Check if card has a winning pattern before claiming
+    if (!selectedCard.card_data) {
+      setError('No card data available.');
+      return;
+    }
+
     try {
+      const cardData = selectedCard.card_data;
+      if (typeof cardData === 'string') {
+        const parsed = JSON.parse(cardData);
+        if (!hasWinningPattern(parsed)) {
+          setError('No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!');
+          return;
+        }
+      }
+      
       await apiService.claimBingo(session.id, selectedCard.card_number, user.id);
       setActionMessage('Bingo claimed! Waiting for validation...');
       setTimeout(() => setActionMessage(null), 2000);
       loadGameData();
-    } catch (error) {
-      setError('Failed to claim bingo.');
+    } catch (error: any) {
+      if (error.message && error.message.includes('winning bingo pattern')) {
+        setError('No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!');
+      } else {
+        setError('Failed to claim bingo.');
+      }
     }
+  };
+
+  // Helper function to check for winning pattern
+  const hasWinningPattern = (cardData: any) => {
+    if (!cardData || !cardData.marks) return false;
+    
+    const marks = cardData.marks;
+    
+    // Check rows
+    for (let i = 0; i < 5; i++) {
+      let rowComplete = true;
+      for (let j = 0; j < 5; j++) {
+        if (!marks[i][j]) {
+          rowComplete = false;
+          break;
+        }
+      }
+      if (rowComplete) return true;
+    }
+    
+    // Check columns
+    for (let j = 0; j < 5; j++) {
+      let colComplete = true;
+      for (let i = 0; i < 5; i++) {
+        if (!marks[i][j]) {
+          colComplete = false;
+          break;
+        }
+      }
+      if (colComplete) return true;
+    }
+    
+    // Check diagonal (top-left to bottom-right)
+    let diagComplete = true;
+    for (let i = 0; i < 5; i++) {
+      if (!marks[i][i]) {
+        diagComplete = false;
+        break;
+      }
+    }
+    if (diagComplete) return true;
+    
+    // Check diagonal (top-right to bottom-left)
+    diagComplete = true;
+    for (let i = 0; i < 5; i++) {
+      if (!marks[i][4-i]) {
+        diagComplete = false;
+        break;
+      }
+    }
+    if (diagComplete) return true;
+    
+    return false;
   };
 
   const handleStartGame = async () => {
@@ -221,7 +294,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       console.log('Clearing auto-draw interval');
       clearInterval(autoDrawInterval);
     };
-  }, [session]);
+  }, [session?.id, session?.status]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

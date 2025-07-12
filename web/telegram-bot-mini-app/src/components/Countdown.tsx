@@ -11,7 +11,8 @@ export function Countdown({ timeLeft, isActive, onGameStart }: CountdownProps) {
   const [displayTime, setDisplayTime] = useState(timeLeft);
 
   useEffect(() => {
-    setDisplayTime(timeLeft);
+    // Ensure timeLeft is not negative
+    setDisplayTime(Math.max(0, timeLeft));
   }, [timeLeft]);
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export function Countdown({ timeLeft, isActive, onGameStart }: CountdownProps) {
           onGameStart();
           return 0; // Ensure we don't go negative
         }
-        return newTime;
+        return Math.max(0, newTime); // Ensure we don't go negative
       });
     }, 1000);
 

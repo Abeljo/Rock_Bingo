@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -101,10 +102,16 @@ func (s *RoomStore) StartRoom(ctx context.Context, roomID int64) error {
 func (s *RoomStore) GetRoomPlayers(ctx context.Context, roomID int64) ([]User, error) {
 	var users []User
 	err := s.DB.SelectContext(ctx, &users, `
-		SELECT u.* FROM users u
-		JOIN bingo_cards c ON c.user_id = u.id
-		WHERE c.room_id = $1
+		SELECT DISTINCT u.* FROM users u
+		JOIN available_cards ac ON ac.selected_by_user_id = u.id
+		WHERE ac.room_id = $1 AND ac.is_selected = true
 	`, roomID)
+
+	fmt.Printf("GetRoomPlayers: roomID=%d, found %d players\n", roomID, len(users))
+	for i, user := range users {
+		fmt.Printf("  Player %d: ID=%d, Username=%s\n", i+1, user.ID, user.Username)
+	}
+
 	return users, err
 }
 

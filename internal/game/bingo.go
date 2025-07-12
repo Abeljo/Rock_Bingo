@@ -73,3 +73,60 @@ func GenerateAvailableCards() []*Card {
 	}
 	return cards
 }
+
+// HasWinningPattern checks if the card has a winning bingo pattern
+func (c *Card) HasWinningPattern() bool {
+	// Check rows
+	for i := 0; i < 5; i++ {
+		rowComplete := true
+		for j := 0; j < 5; j++ {
+			if !c.Marks[i][j] {
+				rowComplete = false
+				break
+			}
+		}
+		if rowComplete {
+			return true
+		}
+	}
+
+	// Check columns
+	for j := 0; j < 5; j++ {
+		colComplete := true
+		for i := 0; i < 5; i++ {
+			if !c.Marks[i][j] {
+				colComplete = false
+				break
+			}
+		}
+		if colComplete {
+			return true
+		}
+	}
+
+	// Check diagonal (top-left to bottom-right)
+	diagComplete := true
+	for i := 0; i < 5; i++ {
+		if !c.Marks[i][i] {
+			diagComplete = false
+			break
+		}
+	}
+	if diagComplete {
+		return true
+	}
+
+	// Check diagonal (top-right to bottom-left)
+	diagComplete = true
+	for i := 0; i < 5; i++ {
+		if !c.Marks[i][4-i] {
+			diagComplete = false
+			break
+		}
+	}
+	if diagComplete {
+		return true
+	}
+
+	return false
+}

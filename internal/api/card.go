@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"rockbingo/internal/db"
 	"strconv"
@@ -96,11 +97,15 @@ func GetUserSelectedCardHandler(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
 	}
 
+	fmt.Printf("GetUserSelectedCard: userID=%d, roomID=%d\n", userID, roomID)
+
 	card, err := cardStore.GetUserSelectedCard(context.Background(), roomID, userID)
 	if err != nil {
+		fmt.Printf("GetUserSelectedCard error: %v\n", err)
 		return fiber.NewError(http.StatusNotFound, "No card selected")
 	}
 
+	fmt.Printf("GetUserSelectedCard success: card=%+v\n", card)
 	return c.JSON(card)
 }
 

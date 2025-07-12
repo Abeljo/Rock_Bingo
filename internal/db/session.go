@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"rockbingo/internal/game"
 	"time"
@@ -148,10 +149,25 @@ func (s *SessionStore) MarkNumberOnCard(ctx context.Context, userID int64, cardN
 
 // Claim bingo and distribute winnings
 func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber int) error {
-	// Get the room and session info
+	fmt.Printf("ClaimBingo called: userID=%d, cardNumber=%d\n", userID, cardNumber)
+
+	// Check if user has a wallet
+	var walletExists bool
+	err := s.DB.GetContext(ctx, &walletExists, `SELECT EXISTS(SELECT 1 FROM wallets WHERE user_id = $1)`, userID)
+	if err != nil {
+		fmt.Printf("Error checking wallet: %v\n", err)
+		return fmt.Errorf("failed to check wallet: %v", err)
+	}
+	if !walletExists {
+		fmt.Printf("User %d has no wallet\n", userID)
+		return fmt.Errorf("user has no wallet")
+	}
+
+	// Get the room, session, and card info
 	var roomID int64
 	var sessionID int64
-	err := s.DB.GetContext(ctx, &roomID, `
+	var cardID int64
+	err = s.DB.GetContext(ctx, &roomID, `
 		SELECT room_id FROM available_cards 
 		WHERE selected_by_user_id = $1 AND card_number = $2
 	`, userID, cardNumber)
@@ -166,6 +182,26 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 	`, roomID)
 	if err != nil {
 		return err
+	}
+
+	// Get the card ID and data from available_cards
+	var cardData []byte
+	err = s.DB.GetContext(ctx, &cardID, `
+		SELECT id, card_data FROM available_cards 
+		WHERE selected_by_user_id = $1 AND card_number = $2
+	`, userID, cardNumber)
+	if err != nil {
+		return err
+	}
+
+	// Validate that the card has a winning pattern
+	var card game.Card
+	if err := json.Unmarshal(cardData, &card); err != nil {
+		return fmt.Errorf("failed to parse card data: %v", err)
+	}
+
+	if !card.HasWinningPattern() {
+		return fmt.Errorf("card does not have a winning bingo pattern")
 	}
 
 	// Get room bet amount
@@ -193,9 +229,9 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 
 	// Record the winner
 	_, err = s.DB.ExecContext(ctx, `
-		INSERT INTO winners (session_id, user_id, winnings, won_at)
-		VALUES ($1, $2, $3, NOW())
-	`, sessionID, userID, winningAmount)
+		INSERT INTO winners (session_id, user_id, bingo_card_id, winnings, won_at)
+		VALUES ($1, $2, $3, $4, NOW())
+	`, sessionID, userID, cardID, winningAmount)
 	if err != nil {
 		return err
 	}
