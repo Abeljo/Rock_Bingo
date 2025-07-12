@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"rockbingo/internal/game"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -12,6 +13,26 @@ type CardStore struct {
 
 func NewCardStore(db *sqlx.DB) *CardStore {
 	return &CardStore{DB: db}
+}
+
+// Create a new card for a user in a room
+func (s *CardStore) CreateCard(ctx context.Context, userID, roomID int64) (*BingoCard, error) {
+	card := game.NewCard()
+	cardData, err := card.ToJSON()
+	if err != nil {
+		return nil, err
+	}
+
+	var newCard BingoCard
+	err = s.DB.GetContext(ctx, &newCard, `
+		INSERT INTO bingo_cards (user_id, room_id, card_data, is_winner)
+		VALUES ($1, $2, $3, false)
+		RETURNING *
+	`, userID, roomID, cardData)
+	if err != nil {
+		return nil, err
+	}
+	return &newCard, nil
 }
 
 // Get card by ID

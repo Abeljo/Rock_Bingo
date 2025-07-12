@@ -2,6 +2,10 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"rockbingo/internal/game"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -17,12 +21,22 @@ func NewSessionStore(db *sqlx.DB) *SessionStore {
 
 // Start a new game session
 func (s *SessionStore) StartSession(ctx context.Context, roomID int64) (*GameSession, error) {
+	callouts := game.GenerateCallouts()
+	remaining, err := json.Marshal(callouts)
+	if err != nil {
+		return nil, err
+	}
+	drawn, err := json.Marshal([]int{})
+	if err != nil {
+		return nil, err
+	}
+
 	var session GameSession
-	err := s.DB.GetContext(ctx, &session, `
-		INSERT INTO game_sessions (room_id, session_start_time, status, created_at)
-		VALUES ($1, $2, 'active', NOW())
+	err = s.DB.GetContext(ctx, &session, `
+		INSERT INTO game_sessions (room_id, session_start_time, status, drawn_numbers, remaining_numbers, created_at)
+		VALUES ($1, $2, 'active', $3, $4, NOW())
 		RETURNING *
-	`, roomID, time.Now())
+	`, roomID, time.Now(), drawn, remaining)
 	if err != nil {
 		return nil, err
 	}
@@ -40,25 +54,79 @@ func (s *SessionStore) GetSession(ctx context.Context, id int64) (*GameSession, 
 }
 
 // Draw a number for a session
-func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64, number int) (*GameNumber, error) {
-	var gn GameNumber
-	err := s.DB.GetContext(ctx, &gn, `
-		INSERT INTO game_numbers (session_id, drawn_number, drawn_at)
-		VALUES ($1, $2, NOW())
-		RETURNING *
-	`, sessionID, number)
+func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, error) {
+	session, err := s.GetSession(ctx, sessionID)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	return &gn, nil
+
+	var remaining []int
+	if err := json.Unmarshal(session.RemainingNumbers, &remaining); err != nil {
+		return 0, err
+	}
+	if len(remaining) == 0 {
+		return 0, errors.New("no numbers left to draw")
+	}
+
+	var drawn []int
+	if err := json.Unmarshal(session.DrawnNumbers, &drawn); err != nil {
+		return 0, err
+	}
+
+	// Draw number and update slices
+	drawnNumber := remaining[0]
+	remaining = remaining[1:]
+	drawn = append(drawn, drawnNumber)
+
+	// Marshal back to JSON
+	newRemaining, err := json.Marshal(remaining)
+	if err != nil {
+		return 0, err
+	}
+	newDrawn, err := json.Marshal(drawn)
+	if err != nil {
+		return 0, err
+	}
+
+	// Update DB
+	_, err = s.DB.ExecContext(ctx, `
+		UPDATE game_sessions 
+		SET drawn_numbers = $1, remaining_numbers = $2 
+		WHERE id = $3
+	`, newDrawn, newRemaining, sessionID)
+	if err != nil {
+		return 0, err
+	}
+
+	return drawnNumber, nil
 }
 
-// Mark a number on a card (update card_data JSONB)
+// Mark a number on a card
 func (s *SessionStore) MarkNumber(ctx context.Context, cardID int64, number int) error {
-	// This assumes card_data is an array of objects with a 'number' and 'marked' field
-	_, err := s.DB.ExecContext(ctx, `
-		UPDATE bingo_cards SET card_data = jsonb_set(card_data, '{marks}', card_data->'marks' || to_jsonb($1::int)) WHERE id = $2
-	`, number, cardID)
+	var cardData []byte
+	err := s.DB.GetContext(ctx, &cardData, `SELECT card_data FROM bingo_cards WHERE id = $1`, cardID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return errors.New("card not found")
+		}
+		return err
+	}
+
+	var card game.Card
+	if err := json.Unmarshal(cardData, &card); err != nil {
+		return err
+	}
+
+	card.MarkNumber(number)
+
+	updatedCardData, err := json.Marshal(card)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.DB.ExecContext(ctx, `
+		UPDATE bingo_cards SET card_data = $1 WHERE id = $2
+	`, updatedCardData, cardID)
 	return err
 }
 

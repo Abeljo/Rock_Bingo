@@ -33,6 +33,7 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
       setWallet(walletData);
       setTransactions(transactionData);
       setWalletError(null);
+      onBalanceUpdate(walletData?.balance ?? 0);
     } catch (error) {
       setWalletError(error);
     }
@@ -45,7 +46,7 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
     try {
       const depositPayload = {
         amount: parseFloat(amount),
-        currency: 'ETB',
+        currency: 'USD',
         transaction_ref: `webapp-${userId}-${Date.now()}`,
         status: 'completed',
       };
@@ -53,28 +54,38 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
       console.log('X-User-ID:', userId);
       await apiService.deposit(userId, depositPayload);
       await loadWalletData();
-      onBalanceUpdate((wallet as any).Balance + parseFloat(amount));
       setAmount('');
       setActiveTab('overview');
     } catch (error) {
-      // Optionally show a user-friendly error message here
+      console.error('Deposit failed:', error);
+      // Show error to user
+      const errorMessage = error instanceof Error ? error.message : 'Deposit failed. Please try again.';
+      alert(`Deposit failed: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleWithdraw = async () => {
-    if (!amount || parseFloat(amount) <= 0 || parseFloat(amount) > ((wallet as any)?.Balance || 0)) return;
+    if (!amount || parseFloat(amount) <= 0 || parseFloat(amount) > (wallet?.balance || 0)) return;
     
     setLoading(true);
     try {
-      await apiService.withdraw(userId, { amount: parseFloat(amount) });
+      const withdrawPayload = {
+        amount: parseFloat(amount),
+        currency: 'USD',
+        destination: 'user_wallet',
+      };
+      console.log('Withdraw payload:', withdrawPayload);
+      await apiService.withdraw(userId, withdrawPayload);
       await loadWalletData();
-      onBalanceUpdate((wallet as any).Balance - parseFloat(amount));
       setAmount('');
       setActiveTab('overview');
     } catch (error) {
-      console.error('Failed to withdraw:', error);
+      console.error('Withdraw failed:', error);
+      // Show error to user
+      const errorMessage = error instanceof Error ? error.message : 'Withdraw failed. Please try again.';
+      alert(`Withdraw failed: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -165,8 +176,8 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
                   <div>
                     <p className="text-purple-100 text-sm">Current Balance</p>
                     <p className="text-3xl font-bold">
-                      ${wallet && (wallet as any).Balance !== undefined && (wallet as any).Balance !== null
-                        ? (wallet as any).Balance.toFixed(2)
+                      ${wallet && wallet.balance !== undefined && wallet.balance !== null
+                        ? wallet.balance.toFixed(2)
                         : '0.00'}
                     </p>
                   </div>
@@ -194,32 +205,49 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Transactions</h3>
                 <div className="space-y-3">
-                  {transactions.slice(0, 5).map((transaction: any) => (
-                    <div
-                      key={transaction.ID}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-3">
-                        {getTransactionIcon(transaction.Type)}
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {transaction.Description}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {transaction.CreatedAt
-                              ? new Date(transaction.CreatedAt).toLocaleDateString()
-                              : ''}
-                          </p>
+                  {transactions.slice(0, 5).map((transaction: any) => {
+                    const getTransactionDescription = (type: string) => {
+                      switch (type) {
+                        case 'deposit':
+                          return 'Deposit';
+                        case 'withdraw':
+                          return 'Withdrawal';
+                        case 'bet':
+                          return 'Bet Placed';
+                        case 'win':
+                          return 'Bingo Win';
+                        default:
+                          return type.charAt(0).toUpperCase() + type.slice(1);
+                      }
+                    };
+                    
+                    return (
+                      <div
+                        key={transaction.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-3">
+                          {getTransactionIcon(transaction.type)}
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {getTransactionDescription(transaction.type)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {transaction.created_at
+                                ? new Date(transaction.created_at).toLocaleDateString()
+                                : ''}
+                            </p>
+                          </div>
                         </div>
+                        <p className={`text-sm font-semibold ${getTransactionColor(transaction.type)}`}>
+                          {transaction.type === 'deposit' || transaction.type === 'win' ? '+' : '-'}
+                          {transaction.amount !== undefined && transaction.amount !== null
+                            ? transaction.amount.toFixed(2)
+                            : '0.00'}
+                        </p>
                       </div>
-                      <p className={`text-sm font-semibold ${getTransactionColor(transaction.Type)}`}>
-                        {transaction.Type === 'deposit' || transaction.Type === 'win' ? '+' : '-'}
-                        {transaction.Amount !== undefined && transaction.Amount !== null
-                          ? transaction.Amount.toFixed(2)
-                          : '0.00'}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -291,21 +319,21 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                       placeholder="Enter amount"
                       min="0"
-                      max={(wallet as any)?.Balance || 0}
+                      max={wallet?.balance || 0}
                       step="0.01"
                     />
                   </div>
                   
                   <p className="text-sm text-gray-600">
-                    Available balance: {((wallet as any)?.Balance !== undefined && (wallet as any)?.Balance !== null) ? (wallet as any).Balance.toFixed(2) : '0.00'}
+                    Available balance: {(wallet && wallet.balance !== undefined && wallet.balance !== null) ? wallet.balance.toFixed(2) : '0.00'}
                   </p>
                   
                   <button
                     onClick={handleWithdraw}
-                    disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > ((wallet as any)?.Balance || 0) || loading}
+                    disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > (wallet?.balance || 0) || loading}
                     className={`
                       w-full py-3 px-4 rounded-lg font-medium transition-all duration-200
-                      ${amount && parseFloat(amount) > 0 && parseFloat(amount) <= ((wallet as any)?.Balance || 0) && !loading
+                      ${amount && parseFloat(amount) > 0 && parseFloat(amount) <= (wallet?.balance || 0) && !loading
                         ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white hover:from-red-600 hover:to-pink-600'
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       }
@@ -323,32 +351,49 @@ export function WalletModal({ isOpen, onClose, onBalanceUpdate, userId }: Wallet
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction History</h3>
                 <div className="space-y-3">
-                  {transactions.map((transaction: any) => (
-                    <div
-                      key={transaction.ID}
-                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-3">
-                        {getTransactionIcon(transaction.Type)}
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {transaction.Description}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {transaction.CreatedAt
-                              ? new Date(transaction.CreatedAt).toLocaleString()
-                              : ''}
-                          </p>
+                  {transactions.map((transaction: any) => {
+                    const getTransactionDescription = (type: string) => {
+                      switch (type) {
+                        case 'deposit':
+                          return 'Deposit';
+                        case 'withdraw':
+                          return 'Withdrawal';
+                        case 'bet':
+                          return 'Bet Placed';
+                        case 'win':
+                          return 'Bingo Win';
+                        default:
+                          return type.charAt(0).toUpperCase() + type.slice(1);
+                      }
+                    };
+                    
+                    return (
+                      <div
+                        key={transaction.id}
+                        className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+                      >
+                        <div className="flex items-center space-x-3">
+                          {getTransactionIcon(transaction.type)}
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {getTransactionDescription(transaction.type)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {transaction.created_at
+                                ? new Date(transaction.created_at).toLocaleString()
+                                : ''}
+                            </p>
+                          </div>
                         </div>
+                        <p className={`text-sm font-semibold ${getTransactionColor(transaction.type)}`}>
+                          {transaction.type === 'deposit' || transaction.type === 'win' ? '+' : '-'}
+                          {transaction.amount !== undefined && transaction.amount !== null
+                            ? transaction.amount.toFixed(2)
+                            : '0.00'}
+                        </p>
                       </div>
-                      <p className={`text-sm font-semibold ${getTransactionColor(transaction.Type)}`}>
-                        {transaction.Type === 'deposit' || transaction.Type === 'win' ? '+' : '-'}
-                        {transaction.Amount !== undefined && transaction.Amount !== null
-                          ? transaction.Amount.toFixed(2)
-                          : '0.00'}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

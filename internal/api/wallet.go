@@ -59,11 +59,21 @@ func DepositHandler(c *fiber.Ctx) error {
 	}
 	// Auto-credit wallet if status is completed
 	if body.Status == "completed" {
+		// Update wallet balance
 		_, werr := walletStore.DB.ExecContext(context.Background(), `
 			UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2
 		`, body.Amount, userID)
 		if werr != nil {
 			return fiber.NewError(http.StatusInternalServerError, werr.Error())
+		}
+
+		// Create transaction record
+		_, terr := walletStore.DB.ExecContext(context.Background(), `
+			INSERT INTO transactions (user_id, type, amount, created_at)
+			VALUES ($1, 'deposit', $2, NOW())
+		`, userID, body.Amount)
+		if terr != nil {
+			return fiber.NewError(http.StatusInternalServerError, terr.Error())
 		}
 	}
 	return c.JSON(dep)

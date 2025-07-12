@@ -5,8 +5,8 @@ const API_BASE_URL = 'http://localhost:3000/api';
 class ApiService {
   private async request(endpoint: string, options: RequestInit = {}) {
     const finalHeaders = {
-      ...options.headers,
       'Content-Type': 'application/json',
+      ...options.headers,
     };
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
@@ -14,14 +14,30 @@ class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
+      const errorText = await response.text();
+      let errorMessage = `HTTP error ${response.status}`;
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        if (errorText) {
+          errorMessage = errorText;
+        }
+      }
+      throw new Error(errorMessage);
     }
-    // If response is 204 No Content or empty, return null
+    // If response is 204 No Content, return null
     if (response.status === 204) {
       return null;
     }
     const text = await response.text();
     if (!text) {
+      // For GET requests, return empty array instead of null
+      if (options.method === 'GET' || !options.method) {
+        return [];
+      }
       return null;
     }
     return JSON.parse(text);
@@ -37,18 +53,18 @@ class ApiService {
 
   // Profile
   async getProfile() {
-    return this.request('/profile');
+    return this.request('/user/me');
   }
 
   async updateProfile(data: any) {
-    return this.request('/profile', {
+    return this.request('/user/me', {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   }
 
   // Rooms
-  async createRoom(data: any) {
+  async createRoom(data: any): Promise<Room> {
     return this.request('/rooms', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -63,16 +79,33 @@ class ApiService {
     return this.request(`/rooms/${id}`);
   }
 
-  async joinRoom(id: string) {
-    return this.request(`/rooms/${id}/join`, { method: 'POST' });
+  async findOrCreateRoom(userId: string, betAmount: number): Promise<Room> {
+    return this.request('/rooms/find-or-create', {
+      method: 'POST',
+      headers: { 'X-User-ID': userId },
+      body: JSON.stringify({ bet_amount: betAmount }),
+    });
   }
 
-  async leaveRoom(id: string) {
-    return this.request(`/rooms/${id}/leave`, { method: 'POST' });
+  async joinRoom(id: string, userId?: string) {
+    return this.request(`/rooms/${id}/join`, { 
+      method: 'POST',
+      headers: userId ? { 'X-User-ID': userId } : {},
+    });
   }
 
-  async startRoom(id: string) {
-    return this.request(`/rooms/${id}/start`, { method: 'POST' });
+  async leaveRoom(id: string, userId?: string) {
+    return this.request(`/rooms/${id}/leave`, { 
+      method: 'POST',
+      headers: userId ? { 'X-User-ID': userId } : {},
+    });
+  }
+
+  async startRoom(id: string, userId?: string) {
+    return this.request(`/rooms/${id}/start`, { 
+      method: 'POST',
+      headers: userId ? { 'X-User-ID': userId } : {},
+    });
   }
 
   async getRoomPlayers(id: string): Promise<Player[]> {
@@ -83,35 +116,53 @@ class ApiService {
     return this.request(`/rooms/${id}/cards`);
   }
 
-  async placeBet(id: string, data: any) {
-    return this.request(`/rooms/${id}/bet`, {
+  // Cards
+  async createCard(roomId: string, userId?: string): Promise<BingoCard> {
+    return this.request('/cards', {
       method: 'POST',
-      body: JSON.stringify(data),
+      headers: userId ? { 'X-User-ID': userId } : {},
+      body: JSON.stringify({ room_id: roomId }),
     });
   }
 
   // Session
-  async getSession(id: string): Promise<GameSession> {
-    return this.request(`/session/${id}`);
-  }
-
-  async drawNumber(id: string) {
-    return this.request(`/session/${id}/draw`, { method: 'POST' });
-  }
-
-  async markNumber(id: string, data: any) {
-    return this.request(`/session/${id}/mark`, {
+  async createSession(roomId: string, userId?: string): Promise<GameSession> {
+    return this.request('/sessions', {
       method: 'POST',
-      body: JSON.stringify(data),
+      headers: userId ? { 'X-User-ID': userId } : {},
+      body: JSON.stringify({ room_id: roomId }),
     });
   }
 
-  async claimBingo(id: string) {
-    return this.request(`/session/${id}/claim`, { method: 'POST' });
+  async getSession(id: string): Promise<GameSession> {
+    return this.request(`/sessions/${id}`);
+  }
+
+  async drawNumber(id: string, userId?: string): Promise<{ number: number }> {
+    return this.request(`/sessions/${id}/draw`, { 
+      method: 'POST',
+      headers: userId ? { 'X-User-ID': userId } : {},
+    });
+  }
+
+  async markNumber(sessionId: string, cardId: string, number: number, userId?: string): Promise<void> {
+    return this.request(`/sessions/${sessionId}/mark`, {
+      method: 'POST',
+      headers: userId ? { 'X-User-ID': userId } : {},
+      body: JSON.stringify({ card_id: cardId, number }),
+    });
+  }
+
+  async claimBingo(sessionId: string, cardId: string, userId?: string): Promise<void> {
+    return this.request(`/sessions/${sessionId}/bingo`, {
+      method: 'POST',
+      headers: userId ? { 'X-User-ID': userId } : {},
+      body: JSON.stringify({ card_id: cardId }),
+    });
   }
 
   async getWinners(id: string) {
-    return this.request(`/session/${id}/winners`);
+    return this.request(`/sessions/${id}/winners`);
   }
 
   // Wallet

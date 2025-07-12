@@ -95,3 +95,23 @@ func (s *RoomStore) PlaceBet(ctx context.Context, userID, roomID, cardID int64, 
 	`, userID, roomID, cardID, betAmount)
 	return err
 }
+
+// Find or create a room with the specified bet amount
+func (s *RoomStore) FindOrCreateRoom(ctx context.Context, betAmount float64) (*BingoRoom, error) {
+	// First, try to find an existing room with the same bet amount that has space
+	var room BingoRoom
+	err := s.DB.GetContext(ctx, &room, `
+		SELECT * FROM bingo_rooms 
+		WHERE bet_amount = $1 AND status = 'waiting' AND current_players < max_players 
+		ORDER BY created_at ASC 
+		LIMIT 1
+	`, betAmount)
+	
+	if err == nil {
+		// Found an existing room
+		return &room, nil
+	}
+	
+	// No existing room found, create a new one
+	return s.CreateRoom(ctx, betAmount, 10) // Default max players of 10
+}

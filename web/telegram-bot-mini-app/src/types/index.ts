@@ -32,37 +32,38 @@ export interface User {
   first_name: string;
   last_name: string;
   created_at: string;
-  updated_at: string;
 }
 
 export interface Room {
   id: string;
-  name: string;
-  description: string;
-  max_players: number;
+  bet_amount: number;
   current_players: number;
-  entry_fee: number;
-  prize_pool: number;
+  max_players: number;
   status: 'waiting' | 'active' | 'completed';
   created_at: string;
-  started_at?: string;
+  updated_at: string;
 }
 
 export interface BingoCard {
   id: string;
-  numbers: number[][];
-  marked: boolean[][];
   user_id: string;
   room_id: string;
+  card_data: {
+    grid: number[][];
+    marks: boolean[][];
+  };
+  is_winner: boolean;
+  created_at: string;
 }
 
 export interface GameSession {
   id: string;
   room_id: string;
-  called_numbers: number[];
-  current_number?: number;
+  session_start_time: string;
+  session_end_time: string;
   status: 'active' | 'completed';
-  winners: string[];
+  drawn_numbers: number[];
+  remaining_numbers: number[];
   created_at: string;
 }
 
@@ -70,7 +71,7 @@ export interface Wallet {
   id: string;
   user_id: string;
   balance: number;
-  currency: string;
+  created_at: string;
   updated_at: string;
 }
 
@@ -79,15 +80,11 @@ export interface Transaction {
   user_id: string;
   type: 'deposit' | 'withdraw' | 'bet' | 'win';
   amount: number;
-  description: string;
   created_at: string;
 }
 
 export interface Player {
   id: string;
-  user_id: string;
   username: string;
   first_name: string;
-  cards_count: number;
-  is_winner: boolean;
 }
