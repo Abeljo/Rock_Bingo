@@ -62,7 +62,7 @@ type GameSession struct {
 	ID               int64           `db:"id"                  json:"id"`
 	RoomID           int64           `db:"room_id"             json:"room_id"`
 	SessionStartTime time.Time       `db:"session_start_time"  json:"session_start_time"`
-	SessionEndTime   time.Time       `db:"session_end_time"    json:"session_end_time"`
+	SessionEndTime   *time.Time      `db:"session_end_time"    json:"session_end_time"`
 	Status           string          `db:"status"              json:"status"`
 	DrawnNumbers     json.RawMessage `db:"drawn_numbers"       json:"drawn_numbers"`
 	RemainingNumbers json.RawMessage `db:"remaining_numbers"   json:"remaining_numbers"`

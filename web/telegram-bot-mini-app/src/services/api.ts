@@ -14,6 +14,11 @@ class ApiService {
     });
 
     if (!response.ok) {
+      // For 404 errors on GET requests, return null instead of throwing
+      if (response.status === 404 && (options.method === 'GET' || !options.method)) {
+        return null;
+      }
+      
       const errorText = await response.text();
       let errorMessage = `HTTP error ${response.status}`;
       try {
@@ -133,9 +138,17 @@ class ApiService {
   }
 
   async getMyCard(roomId: string, userId?: string): Promise<any> {
-    return this.request(`/rooms/${roomId}/my-card`, {
-      headers: userId ? { 'X-User-ID': userId } : {},
-    });
+    try {
+      return await this.request(`/rooms/${roomId}/my-card`, {
+        headers: userId ? { 'X-User-ID': userId } : {},
+      });
+    } catch (error) {
+      // 404 is expected when no card is selected yet
+      if (error instanceof Error && error.message.includes('404')) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   // Cards
@@ -228,7 +241,15 @@ class ApiService {
   }
 
   async getRoomSession(roomId: string): Promise<any> {
-    return this.request(`/rooms/${roomId}/session`);
+    try {
+      return await this.request(`/rooms/${roomId}/session`);
+    } catch (error) {
+      // 404 is expected when no session exists yet
+      if (error instanceof Error && error.message.includes('404')) {
+        return null;
+      }
+      throw error;
+    }
   }
 }
 

@@ -49,10 +49,10 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       await apiService.joinRoom(room.id, user.id);
 
       // 2. Check if user has selected a card
-      try {
-        const myCard = await apiService.getMyCard(room.id, user.id);
+      const myCard = await apiService.getMyCard(room.id, user.id);
+      if (myCard) {
         setSelectedCard(myCard);
-      } catch {
+      } else {
         // No card selected yet, show card selection
         setShowCardSelection(true);
         setLoading(false);
@@ -60,15 +60,9 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       }
 
       // 3. Get or create session for the room
-      let gameSession = null;
-      try {
-        gameSession = await apiService.getRoomSession(room.id);
-        if (gameSession && gameSession.drawn_numbers) {
-          setDrawnNumbers(gameSession.drawn_numbers);
-        }
-      } catch {
-        // If not found, do not create session yet (let host start it)
-        gameSession = null;
+      let gameSession = await apiService.getRoomSession(room.id);
+      if (gameSession && gameSession.drawn_numbers) {
+        setDrawnNumbers(gameSession.drawn_numbers);
       }
       setSession(gameSession);
 
@@ -172,13 +166,16 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   const handleStartGame = async () => {
     if (!room || !user) return;
+    console.log('handleStartGame called', { roomId: room.id, userId: user.id });
     try {
       const newSession = await apiService.createSession(room.id, user.id);
+      console.log('Session created:', newSession);
       setSession(newSession);
       setActionMessage('Game started!');
       setTimeout(() => setActionMessage(null), 1500);
       loadGameData();
     } catch (error) {
+      console.error('Failed to start game:', error);
       setError('Failed to start game.');
     }
   };
@@ -190,18 +187,28 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   const handleGameStart = () => {
     // When countdown reaches zero, automatically start the game
-    if (!session && countdown?.game_started) {
+    console.log('handleGameStart called', { session, countdown });
+    if (!session) {
+      console.log('Starting game automatically - countdown finished');
       handleStartGame();
+    } else {
+      console.log('Not starting game - session already exists:', { hasSession: !!session, timeLeft: countdown?.time_left });
     }
   };
 
   // Auto-draw numbers when game is active
   useEffect(() => {
-    if (!session || session.status !== 'active') return;
+    if (!session || session.status !== 'active') {
+      console.log('Auto-draw not active:', { session: !!session, status: session?.status });
+      return;
+    }
 
+    console.log('Starting auto-draw polling for session:', session.id);
     const autoDrawInterval = setInterval(async () => {
       try {
+        console.log('Auto-drawing number for session:', session.id);
         const result = await apiService.autoDrawNumber(session.id);
+        console.log('Auto-draw result:', result);
         setDrawnNumbers(prev => [...prev, result.number]);
         setActionMessage(`Number ${result.number} called automatically!`);
         setTimeout(() => setActionMessage(null), 2000);
@@ -210,7 +217,10 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       }
     }, 5000); // Draw a number every 5 seconds
 
-    return () => clearInterval(autoDrawInterval);
+    return () => {
+      console.log('Clearing auto-draw interval');
+      clearInterval(autoDrawInterval);
+    };
   }, [session]);
 
   const formatTime = (seconds: number) => {

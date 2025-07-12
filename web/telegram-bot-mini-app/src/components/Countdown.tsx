@@ -22,14 +22,16 @@ export function Countdown({ timeLeft, isActive, onGameStart }: CountdownProps) {
         const newTime = prev - 1;
         if (newTime <= 0 && onGameStart) {
           console.log('Countdown finished, calling onGameStart');
+          console.log('Countdown state:', { timeLeft, isActive, displayTime: prev });
           onGameStart();
+          return 0; // Ensure we don't go negative
         }
         return newTime;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isActive, displayTime, onGameStart]);
+  }, [isActive, displayTime, onGameStart, timeLeft]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

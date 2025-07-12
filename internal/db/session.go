@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math/rand"
 	"rockbingo/internal/game"
 	"time"
 
@@ -82,9 +83,11 @@ func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, er
 		return 0, err
 	}
 
-	// Draw number and update slices
-	drawnNumber := remaining[0]
-	remaining = remaining[1:]
+	// Draw a random number from remaining numbers
+	randIndex := rand.Intn(len(remaining))
+	drawnNumber := remaining[randIndex]
+	// Remove the drawn number from remaining
+	remaining = append(remaining[:randIndex], remaining[randIndex+1:]...)
 	drawn = append(drawn, drawnNumber)
 
 	// Marshal back to JSON
