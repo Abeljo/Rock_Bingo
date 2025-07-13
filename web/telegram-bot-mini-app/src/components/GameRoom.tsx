@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trophy, Users, Timer, Sparkles, ArrowLeft, Play, Check } from 'lucide-react';
+import { Trophy, Users, Timer, Sparkles, ArrowLeft, Play, Check, X } from 'lucide-react';
 import { BingoCard } from './BingoCard';
 import { CardSelection } from './CardSelection';
 import { Countdown } from './Countdown';
 import { Room, GameSession, Player, User } from '../types';
 import { apiService } from '../services/api';
 import { useTelegram } from '../hooks/useTelegram';
+// import { useNavigate } from 'react-router-dom';
 
 interface GameRoomProps {
   room: Room;
@@ -28,6 +29,11 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const [countdown, setCountdown] = useState<any>(null);
   const [uncalledModalOpen, setUncalledModalOpen] = useState(false);
   const [uncalledModalMsg, setUncalledModalMsg] = useState('');
+  const [showCongratsModal, setShowCongratsModal] = useState(false);
+  const [winningAmount, setWinningAmount] = useState<number | null>(null);
+  const [disabledCardNumbers, setDisabledCardNumbers] = useState<number[]>([]);
+  const [forceCardSelection, setForceCardSelection] = useState(false);
+  // const navigate = typeof useNavigate === 'function' ? useNavigate() : null;
 
   // Authenticate and set user
   useEffect(() => {
@@ -279,6 +285,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   const handleCardSelected = (cardNumber: number) => {
     setShowCardSelection(false);
+    setForceCardSelection(false);
     loadGameData();
   };
 
@@ -336,13 +343,64 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     gamePhase = 'countdown';
   }
 
-  if (showCardSelection) {
+  // Redirect to lobby/card selection after win or game end
+  useEffect(() => {
+    if (gamePhase === 'finished') {
+      // Show a message for 2 seconds, then go back to lobby/card selection
+      const timeout = setTimeout(() => {
+        if (onBack) onBack();
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [gamePhase, onBack]);
+
+  // Show congrats modal and handle navigation after win
+  useEffect(() => {
+    if (gamePhase === 'finished' && winner) {
+      setWinningAmount((winner as any)?.winnings || null);
+      setShowCongratsModal(true);
+      // Remove the auto-close logic; modal will close on user action
+    }
+  }, [gamePhase, winner, selectedCard]);
+
+  // Handler for Select Another Card
+  const handleSelectAnotherCard = () => {
+    setShowCongratsModal(false);
+    if (selectedCard) {
+      setDisabledCardNumbers((prev) => [...prev, selectedCard.card_number]);
+    }
+    setSelectedCard(null); // Clear selected card so CardSelection is shown
+    setShowCardSelection(true);
+    setForceCardSelection(true);
+  };
+
+  // Handler for Leave Room
+  const handleLeaveRoom = () => {
+    setShowCongratsModal(false);
+    if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
+      window.Telegram.WebApp.close();
+    } else {
+      // fallback: reload or navigate away
+      window.location.href = 'about:blank';
+    }
+  };
+
+  // If all cards are selected, refresh and move to a new room
+  useEffect(() => {
+    if (showCardSelection && selectedCard && disabledCardNumbers.length >= 99) {
+      // All cards selected, refresh or move to a new room
+      window.location.reload(); // or trigger a new room join logic
+    }
+  }, [showCardSelection, disabledCardNumbers, selectedCard]);
+
+  if (showCardSelection || forceCardSelection) {
     return (
       <CardSelection
         roomId={room.id}
         userId={user?.id || ''}
         onCardSelected={handleCardSelected}
         onBack={onBack}
+        disabledCardNumbers={disabledCardNumbers}
       />
     );
   }
@@ -364,11 +422,42 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Uncalled Numbers Modal */}
+      {/* Uncalled Numbers Toast */}
       {uncalledModalOpen && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-xl px-6 py-3 max-w-xs w-full text-center border border-red-200 animate-fade-in">
+            <div className="text-red-600 font-semibold mb-1 flex items-center justify-center">
+              <X className="h-5 w-5 mr-2" />
+              {uncalledModalMsg}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Congrats Modal */}
+      {showCongratsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-xs w-full text-center animate-fade-in">
-            <div className="text-red-600 font-bold mb-2">{uncalledModalMsg}</div>
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center animate-fade-in">
+            <Sparkles className="h-12 w-12 text-yellow-500 mx-auto mb-4 animate-bounce" />
+            <h2 className="text-2xl font-bold text-green-700 mb-2">Congratulations!</h2>
+            <p className="text-lg text-gray-800 mb-2">You won the game!</p>
+            {winningAmount !== null && (
+              <p className="text-xl font-bold text-purple-700 mb-4">+{winningAmount.toFixed(2)} ETB</p>
+            )}
+            <div className="flex flex-col gap-3 mt-4">
+              <button
+                onClick={handleSelectAnotherCard}
+                className="w-full px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
+              >
+                Select Another Card
+              </button>
+              <button
+                onClick={handleLeaveRoom}
+                className="w-full px-6 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold shadow hover:bg-gray-300 transition-all duration-200"
+              >
+                Leave Room
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -407,11 +496,14 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         </div>
       </div>
 
+      {/* Move actionMessage above the card, reserve space to prevent shifting */}
       <main className="max-w-4xl mx-auto p-4">
+        <div style={{ minHeight: '32px' }}>
+          {actionMessage && (
+            <div className="mb-2 text-center text-blue-600 font-semibold animate-pulse">{actionMessage}</div>
+          )}
+        </div>
         {/* Status and winner banners */}
-        {actionMessage && (
-          <div className="mb-4 text-center text-blue-600 font-semibold animate-pulse">{actionMessage}</div>
-        )}
         {winner && (
           <div className="mb-4 flex items-center justify-center text-green-700 font-bold text-xl bg-green-100 rounded-lg p-4 shadow animate-bounce">
             <Sparkles className="h-6 w-6 mr-2 text-yellow-500" />

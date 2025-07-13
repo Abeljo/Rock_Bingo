@@ -7,6 +7,7 @@ interface CardSelectionProps {
   userId: string;
   onCardSelected: (cardNumber: number) => void;
   onBack: () => void;
+  disabledCardNumbers?: number[];
 }
 
 interface AvailableCard {
@@ -18,7 +19,7 @@ interface AvailableCard {
   selected_by_user_id?: number;
 }
 
-export function CardSelection({ roomId, userId, onCardSelected, onBack }: CardSelectionProps) {
+export function CardSelection({ roomId, userId, onCardSelected, onBack, disabledCardNumbers = [] }: CardSelectionProps) {
   const [availableCards, setAvailableCards] = useState<AvailableCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,11 +125,11 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack }: CardSe
           {availableCards?.map((card) => (
             <button
               key={card.id}
-              onClick={() => !card.is_selected && handleCardSelect(card.card_number)}
-              disabled={card.is_selected || selecting}
+              onClick={() => !card.is_selected && !disabledCardNumbers.includes(card.card_number) && handleCardSelect(card.card_number)}
+              disabled={card.is_selected || selecting || disabledCardNumbers.includes(card.card_number)}
               className={`
                 aspect-square rounded-lg border-2 font-bold text-sm transition-all duration-200
-                ${card.is_selected
+                ${card.is_selected || disabledCardNumbers.includes(card.card_number)
                   ? 'bg-green-100 border-green-500 text-green-700'
                   : 'bg-white border-gray-300 hover:border-purple-500 hover:bg-purple-50 text-gray-700'
                 }
@@ -136,7 +137,7 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack }: CardSe
               `}
             >
               <div className="flex items-center justify-center h-full">
-                {card.is_selected ? (
+                {card.is_selected || disabledCardNumbers.includes(card.card_number) ? (
                   <Check className="h-4 w-4" />
                 ) : (
                   <span>{card.card_number}</span>
