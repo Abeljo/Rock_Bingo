@@ -6,6 +6,8 @@ import (
 	"rockbingo/internal/db"
 	"strconv"
 
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -33,12 +35,16 @@ func TelegramAuthHandler(c *fiber.Ctx) error {
 	}
 	var body req
 	if err := c.BodyParser(&body); err != nil {
+		log.Printf("[TelegramAuthHandler] BodyParser error: %v", err)
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
+	log.Printf("[TelegramAuthHandler] Auth request: %+v", body)
 	user, err := userStore.FindOrCreateByTelegram(context.Background(), body.TelegramID, body.Username, body.FirstName, body.LastName)
 	if err != nil {
+		log.Printf("[TelegramAuthHandler] FindOrCreateByTelegram error: %v", err)
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
+	log.Printf("[TelegramAuthHandler] Auth success: %+v", user)
 	return c.JSON(user)
 }
 

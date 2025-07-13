@@ -6,6 +6,8 @@ import (
 	"rockbingo/internal/db"
 	"strconv"
 
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -21,10 +23,13 @@ func CreateSessionHandler(c *fiber.Ctx) error {
 	}
 	var body req
 	if err := c.BodyParser(&body); err != nil {
+		log.Printf("[CreateSessionHandler] BodyParser error: %v", err)
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
+	log.Printf("[CreateSessionHandler] Starting session for roomID=%d", body.RoomID)
 	session, err := sessionStore.StartSession(context.Background(), body.RoomID)
 	if err != nil {
+		log.Printf("[CreateSessionHandler] StartSession error: %v", err)
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(session)
@@ -45,10 +50,13 @@ func GetSessionHandler(c *fiber.Ctx) error {
 func DrawNumberHandler(c *fiber.Ctx) error {
 	sessionID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
+		log.Printf("[DrawNumberHandler] Invalid session ID: %v", err)
 		return fiber.NewError(http.StatusBadRequest, "Invalid session ID")
 	}
+	log.Printf("[DrawNumberHandler] Drawing number for sessionID=%d", sessionID)
 	number, err := sessionStore.DrawNumber(context.Background(), sessionID)
 	if err != nil {
+		log.Printf("[DrawNumberHandler] DrawNumber error: %v", err)
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(fiber.Map{"number": number})
@@ -57,6 +65,7 @@ func DrawNumberHandler(c *fiber.Ctx) error {
 func MarkNumberHandler(c *fiber.Ctx) error {
 	userID, err := getUserID(c)
 	if err != nil {
+		log.Printf("[MarkNumberHandler] getUserID error: %v", err)
 		return err
 	}
 
@@ -66,9 +75,12 @@ func MarkNumberHandler(c *fiber.Ctx) error {
 	}
 	var body req
 	if err := c.BodyParser(&body); err != nil {
+		log.Printf("[MarkNumberHandler] BodyParser error: %v", err)
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
+	log.Printf("[MarkNumberHandler] userID=%d, cardNumber=%d, number=%d", userID, body.CardNumber, body.Number)
 	if err := sessionStore.MarkNumberOnCard(context.Background(), userID, body.CardNumber, body.Number); err != nil {
+		log.Printf("[MarkNumberHandler] MarkNumberOnCard error: %v", err)
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 	return c.SendStatus(http.StatusNoContent)
@@ -77,6 +89,7 @@ func MarkNumberHandler(c *fiber.Ctx) error {
 func ClaimBingoHandler(c *fiber.Ctx) error {
 	userID, err := getUserID(c)
 	if err != nil {
+		log.Printf("[ClaimBingoHandler] getUserID error: %v", err)
 		return err
 	}
 
@@ -85,9 +98,12 @@ func ClaimBingoHandler(c *fiber.Ctx) error {
 	}
 	var body req
 	if err := c.BodyParser(&body); err != nil {
+		log.Printf("[ClaimBingoHandler] BodyParser error: %v", err)
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
+	log.Printf("[ClaimBingoHandler] userID=%d, cardNumber=%d", userID, body.CardNumber)
 	if err := sessionStore.ClaimBingo(context.Background(), userID, body.CardNumber); err != nil {
+		log.Printf("[ClaimBingoHandler] ClaimBingo error: %v", err)
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 	return c.SendStatus(http.StatusNoContent)
@@ -123,15 +139,15 @@ func AutoDrawNumberHandler(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(http.StatusBadRequest, "Invalid session ID")
 	}
-	
+
 	// Draw a number automatically
 	number, err := sessionStore.DrawNumber(context.Background(), sessionID)
 	if err != nil {
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
-	
+
 	return c.JSON(fiber.Map{
-		"number": number,
+		"number":  number,
 		"message": "Number drawn automatically",
 	})
 }

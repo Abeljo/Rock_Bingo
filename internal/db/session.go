@@ -166,7 +166,6 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 	// Get the room, session, and card info
 	var roomID int64
 	var sessionID int64
-	var cardID int64
 	err = s.DB.GetContext(ctx, &roomID, `
 		SELECT room_id FROM available_cards 
 		WHERE selected_by_user_id = $1 AND card_number = $2
@@ -184,10 +183,20 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return err
 	}
 
-	// Get the card ID and data from available_cards
+	// Get the bingo_card_id from bingo_cards
+	var bingoCardID int64
+	err = s.DB.GetContext(ctx, &bingoCardID, `
+		SELECT id FROM bingo_cards 
+		WHERE user_id = $1 AND room_id = $2
+	`, userID, roomID)
+	if err != nil {
+		return err
+	}
+
+	// Get the card data from available_cards
 	var cardData []byte
-	err = s.DB.GetContext(ctx, &cardID, `
-		SELECT id, card_data FROM available_cards 
+	err = s.DB.GetContext(ctx, &cardData, `
+		SELECT card_data FROM available_cards 
 		WHERE selected_by_user_id = $1 AND card_number = $2
 	`, userID, cardNumber)
 	if err != nil {
@@ -231,7 +240,7 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 	_, err = s.DB.ExecContext(ctx, `
 		INSERT INTO winners (session_id, user_id, bingo_card_id, winnings, won_at)
 		VALUES ($1, $2, $3, $4, NOW())
-	`, sessionID, userID, cardID, winningAmount)
+	`, sessionID, userID, bingoCardID, winningAmount)
 	if err != nil {
 		return err
 	}

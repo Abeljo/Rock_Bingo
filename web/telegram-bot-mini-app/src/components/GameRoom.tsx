@@ -26,6 +26,8 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const [showCardSelection, setShowCardSelection] = useState(false);
   const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
   const [countdown, setCountdown] = useState<any>(null);
+  const [uncalledModalOpen, setUncalledModalOpen] = useState(false);
+  const [uncalledModalMsg, setUncalledModalMsg] = useState('');
 
   // Authenticate and set user
   useEffect(() => {
@@ -161,14 +163,20 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       return;
     }
 
+    // --- NEW: Check if all marked numbers are in drawn numbers ---
+    const cardData = typeof selectedCard.card_data === 'string' ? JSON.parse(selectedCard.card_data) : selectedCard.card_data;
+    if (!allMarkedNumbersAreCalled(cardData, drawnNumbers)) {
+      setUncalledModalMsg('You have marked numbers that have not been called yet. Please only mark called numbers before claiming Bingo!');
+      setUncalledModalOpen(true);
+      setTimeout(() => setUncalledModalOpen(false), 3000);
+      return;
+    }
+    // --- END NEW ---
+
     try {
-      const cardData = selectedCard.card_data;
-      if (typeof cardData === 'string') {
-        const parsed = JSON.parse(cardData);
-        if (!hasWinningPattern(parsed)) {
-          setError('No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!');
-          return;
-        }
+      if (typeof cardData === 'object' && !hasWinningPattern(cardData)) {
+        setError('No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!');
+        return;
       }
       
       await apiService.claimBingo(session.id, selectedCard.card_number, user.id);
@@ -235,6 +243,22 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     if (diagComplete) return true;
     
     return false;
+  };
+
+  // Helper function to check if all marked numbers are in drawn numbers
+  const allMarkedNumbersAreCalled = (cardData: any, drawnNumbers: number[]) => {
+    if (!cardData || !cardData.grid || !cardData.marks) return false;
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 5; j++) {
+        if (cardData.marks[i][j]) {
+          const number = cardData.grid[i][j];
+          if (!drawnNumbers.includes(number)) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
   };
 
   const handleStartGame = async () => {
@@ -340,12 +364,20 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Uncalled Numbers Modal */}
+      {uncalledModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-xs w-full text-center animate-fade-in">
+            <div className="text-red-600 font-bold mb-2">{uncalledModalMsg}</div>
+          </div>
+        </div>
+      )}
       {/* Countdown Component */}
       {countdown && (
         <>
-          <div className="fixed top-16 left-4 z-50 bg-white p-2 rounded text-xs">
+          {/* <div className="fixed top-16 left-4 z-50 bg-white p-2 rounded text-xs">
             Debug: {JSON.stringify(countdown)}
-          </div>
+          </div> */}
           <Countdown
             timeLeft={countdown.time_left}
             isActive={countdown.is_active}
@@ -366,7 +398,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
           </div>
           <div className="flex items-center space-x-1">
             <Trophy className="h-5 w-5" />
-            <span>{room.entry_fee ?? room.bet_amount} ETB</span>
+            <span>{room.bet_amount} ETB</span>
           </div>
           <div className="flex items-center space-x-1">
             <Timer className="h-5 w-5" />
@@ -401,7 +433,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         {gamePhase === 'ready' && (
           <div className="mb-4 text-center text-purple-700 font-semibold">
             Game is ready to start.<br />
-            {players.length > 0 && user && players[0].user_id === user.id && (
+            {players.length > 0 && user && players[0].id === user.id && (
               <button
                 onClick={handleStartGame}
                 className="mt-2 px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
@@ -409,7 +441,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
                 Start Game
               </button>
             )}
-            {players.length > 0 && user && players[0].user_id !== user.id && (
+            {players.length > 0 && user && players[0].id !== user.id && (
               <span>Waiting for host to start the game...</span>
             )}
           </div>
@@ -488,7 +520,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
                 {(players || []).map(player => (
                   <li key={player.id} className="flex items-center justify-between">
                     <span className="text-gray-700">{player.first_name}</span>
-                    {player.user_id === user?.id && (
+                    {player.id === user?.id && (
                       <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">You</span>
                     )}
                   </li>
