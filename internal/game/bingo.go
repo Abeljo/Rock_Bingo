@@ -12,7 +12,7 @@ type Card struct {
 	Marks [5][5]bool `json:"marks"`
 }
 
-// NewCard creates a 5x5 Bingo card with 25 random numbers from 1-100.
+// NewCard creates a 5x5 Bingo card with 25 random numbers from 1-100 and center cell auto-marked.
 func NewCard() *Card {
 	rand.Seed(time.Now().UnixNano())
 	card := &Card{}
@@ -32,7 +32,15 @@ func NewCard() *Card {
 		}
 	}
 
+	// Mark the center cell as a free space
+	card.Marks[2][2] = true
+
 	return card
+}
+
+// BingoHeaders returns the BINGO column headers
+func BingoHeaders() [5]string {
+	return [5]string{"B", "I", "N", "G", "O"}
 }
 
 // MarkNumber marks a number on the card if it exists.

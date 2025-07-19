@@ -97,15 +97,38 @@ export function RoomList({ onJoinRoom, onViewRoom }: RoomListProps) {
 
       {/* Rooms Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {rooms.map((room, idx) => (
-          <RoomCard
-            key={room.id ?? idx}
-            room={room}
-            onJoin={room.id ? onJoinRoom : undefined}
-            onView={room.id ? onViewRoom : undefined}
-            disabled={!room.id}
-          />
-        ))}
+        {rooms.map((room, idx) => {
+          const percentFull = Math.min(100, Math.round((room.current_players / room.max_players) * 100));
+          const isAlmostFull = percentFull >= 80;
+          // If room has countdown info, show it
+          const countdown = room.countdown_time_left;
+          return (
+            <div key={room.id ?? idx} className="relative bg-white rounded-xl shadow-lg p-6 flex flex-col gap-3 border border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-lg text-purple-700">Room #{room.id}</span>
+                <span className="text-sm text-gray-500">Bet: {room.bet_amount} ETB</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-700 font-semibold">{room.current_players}/{room.max_players} players</span>
+                {isAlmostFull && <span className="ml-2 px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-bold animate-pulse">Almost Full</span>}
+              </div>
+              <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden mt-1 mb-2">
+                <div className={`h-full rounded-full transition-all duration-500 ${isAlmostFull ? 'bg-yellow-400' : 'bg-purple-400'}`} style={{ width: `${percentFull}%` }}></div>
+              </div>
+              {typeof countdown === 'number' && countdown > 0 && (
+                <div className="text-center text-blue-600 font-semibold text-sm mb-2 animate-pulse">
+                  Game starts in {countdown}s
+                </div>
+              )}
+              <RoomCard
+                room={room}
+                onJoin={room.id ? onJoinRoom : undefined}
+                onView={room.id ? onViewRoom : undefined}
+                disabled={!room.id}
+              />
+            </div>
+          );
+        })}
       </div>
 
       {/* Create Room Modal */}

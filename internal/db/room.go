@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -18,6 +20,9 @@ func NewRoomStore(db *sqlx.DB) *RoomStore {
 
 // Create a new room
 func (s *RoomStore) CreateRoom(ctx context.Context, betAmount float64, maxPlayers int) (*BingoRoom, error) {
+	if maxPlayers <= 0 {
+		maxPlayers = 100
+	}
 	var room BingoRoom
 	err := s.DB.GetContext(ctx, &room, `
 		INSERT INTO bingo_rooms (bet_amount, max_players, current_players, status, countdown_start, game_start_time)
@@ -47,39 +52,74 @@ func (s *RoomStore) GetRoom(ctx context.Context, id int64) (*BingoRoom, error) {
 	return &room, nil
 }
 
+// Add global config for min players
+type RoomConfig struct {
+	MinPlayersToStart int
+}
+
+var roomConfig = RoomConfig{MinPlayersToStart: 5} // default
+
+// Add a function to set config from env
+func SetRoomConfigFromEnv() {
+	if val, ok := lookupEnvInt("MIN_PLAYERS_TO_START"); ok {
+		roomConfig.MinPlayersToStart = val
+	}
+}
+
+// Helper to look up int env vars
+func lookupEnvInt(key string) (int, bool) {
+	val := os.Getenv(key)
+	if val == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 // Join a room (increment current_players and start countdown if first player)
 func (s *RoomStore) JoinRoom(ctx context.Context, roomID int64) error {
-	// First, get the current room state
 	var room BingoRoom
 	err := s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
 	if err != nil {
 		return err
 	}
 
-	// If this is the first player joining, start the countdown
-	if room.CurrentPlayers == 0 {
+	// Always increment current_players first
+	_, err = s.DB.ExecContext(ctx, `
+		UPDATE bingo_rooms 
+		SET current_players = current_players + 1,
+			updated_at = NOW()
+		WHERE id = $1 AND current_players < max_players
+	`, roomID)
+	if err != nil {
+		return err
+	}
+
+	// Re-fetch the room to get the updated current_players
+	err = s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
+	if err != nil {
+		return err
+	}
+
+	if room.CurrentPlayers >= roomConfig.MinPlayersToStart && room.CountdownStart == nil {
 		now := time.Now()
 		countdownStart := now
 		gameStartTime := now.Add(60 * time.Second) // 60 second countdown
-
 		_, err = s.DB.ExecContext(ctx, `
 			UPDATE bingo_rooms 
-			SET current_players = current_players + 1, 
-				countdown_start = $1, 
+			SET countdown_start = $1, 
 				game_start_time = $2,
 				updated_at = NOW()
-			WHERE id = $3 AND current_players < max_players
+			WHERE id = $3
 		`, countdownStart, gameStartTime, roomID)
-	} else {
-		// Just increment player count
-		_, err = s.DB.ExecContext(ctx, `
-			UPDATE bingo_rooms 
-			SET current_players = current_players + 1,
-				updated_at = NOW()
-			WHERE id = $1 AND current_players < max_players
-		`, roomID)
+		if err != nil {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
 // Leave a room (decrement current_players)
@@ -147,8 +187,8 @@ func (s *RoomStore) FindOrCreateRoom(ctx context.Context, betAmount float64) (*B
 		return &room, nil
 	}
 
-	// No existing room found, create a new one
-	newRoom, err := s.CreateRoom(ctx, betAmount, 10) // Default max players of 10
+	// No existing room found, create a new one with maxPlayers=100
+	newRoom, err := s.CreateRoom(ctx, betAmount, 100)
 	if err != nil {
 		return nil, err
 	}
@@ -188,4 +228,26 @@ func (s *RoomStore) GetCountdownInfo(ctx context.Context, roomID int64) (*Countd
 		GameStarted:   now.After(*room.GameStartTime),
 		GameStartTime: room.GameStartTime,
 	}, nil
+}
+
+// Remove a user from a room: unselect their card, delete their bingo_card, and decrement player count
+func (s *RoomStore) RemoveUserFromRoom(ctx context.Context, roomID, userID int64) error {
+	// Unselect the user's card
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE available_cards
+		SET is_selected = false, selected_by_user_id = NULL
+		WHERE room_id = $1 AND selected_by_user_id = $2
+	`, roomID, userID)
+	if err != nil {
+		return err
+	}
+	// Optionally, remove from bingo_cards
+	_, err = s.DB.ExecContext(ctx, `
+		DELETE FROM bingo_cards WHERE room_id = $1 AND user_id = $2
+	`, roomID, userID)
+	if err != nil {
+		return err
+	}
+	// Decrement player count
+	return s.LeaveRoom(ctx, roomID)
 }

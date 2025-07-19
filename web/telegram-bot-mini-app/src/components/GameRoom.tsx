@@ -13,6 +13,19 @@ interface GameRoomProps {
   onBack: () => void;
 }
 
+// Add confetti effect for win
+function ConfettiCelebration({ show }: { show: boolean }) {
+  if (!show) return null;
+  // Simple emoji confetti fallback
+  return (
+    <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center animate-fade-in">
+      <div className="text-6xl select-none" aria-hidden="true" style={{ pointerEvents: 'none' }}>
+        🎉🎊✨🎉🎊✨
+      </div>
+    </div>
+  );
+}
+
 export function GameRoom({ room, onBack }: GameRoomProps) {
   const { user: telegramUser } = useTelegram();
   const [user, setUser] = useState<User | null>(null);
@@ -144,7 +157,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       setActionMessage('Number marked!');
       setTimeout(() => setActionMessage(null), 1500);
       // Optimistically update marks
-      setSelectedCard((prev) => {
+      setSelectedCard((prev: any) => {
         if (!prev) return prev;
         const cardData = typeof prev.card_data === 'string' ? JSON.parse(prev.card_data) : prev.card_data;
         const newMarks = cardData.marks.map((rowArr: boolean[], rIdx: number) =>
@@ -417,6 +430,14 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     }
   }, [gamePhase, winner, selectedCard]);
 
+  // Optionally, play a sound on win
+  useEffect(() => {
+    if (showCongratsModal) {
+      const audio = new Audio('https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa4c8b.mp3');
+      audio.play();
+    }
+  }, [showCongratsModal]);
+
   // Handler for Select Another Card
   const handleSelectAnotherCard = () => {
     setShowCongratsModal(false);
@@ -439,6 +460,21 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     }
   };
 
+  // Add a leave room handler
+  const handleLeaveRoomButton = async () => {
+    if (!room || !user) return;
+    try {
+      await apiService.leaveRoom(room.id, user.id);
+      if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
+        window.Telegram.WebApp.close();
+      } else {
+        onBack();
+      }
+    } catch (e) {
+      setError('Failed to leave room.');
+    }
+  };
+
   // If all cards are selected, refresh and move to a new room
   useEffect(() => {
     if (showCardSelection && selectedCard && disabledCardNumbers.length >= 99) {
@@ -446,6 +482,12 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       window.location.reload(); // or trigger a new room join logic
     }
   }, [showCardSelection, disabledCardNumbers, selectedCard]);
+
+  // Add a helper to get the latest called number
+  const safeDrawnNumbers = Array.isArray(drawnNumbers) ? drawnNumbers : [];
+  const safePlayers = Array.isArray(players) ? players : [];
+  const latestNumber = safeDrawnNumbers.length > 0 ? safeDrawnNumbers[safeDrawnNumbers.length - 1] : null;
+  const prizePool = (safePlayers.length * (room.bet_amount || 0)).toFixed(2);
 
   if ((showCardSelection || forceCardSelection) || (!selectedCard && session && session.status === 'active')) {
     return (
@@ -493,8 +535,25 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   }
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-red-600 font-bold">{error}</div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+        <div className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center animate-fade-in">
+          <div className="text-red-500 mb-4">
+            <svg className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Game Room Error</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              onBack();
+            }}
+            className="bg-purple-500 hover:bg-purple-600 text-white px-6 py-2 rounded-lg transition-colors"
+          >
+            Return to Lobby
+          </button>
+        </div>
       </div>
     );
   }
@@ -573,6 +632,22 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         </>
       )}
       
+      {/* Animated Countdown Overlay */}
+      {gamePhase === 'countdown' && countdown && countdown.is_active && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl px-12 py-10 text-center flex flex-col items-center">
+            <div className="text-5xl font-extrabold text-purple-700 mb-4 animate-bounce">
+              {countdown.time_left}
+            </div>
+            <div className="text-xl font-semibold text-gray-800 mb-2">Game starting soon!</div>
+            <div className="text-gray-500">Get ready to play Bingo!</div>
+          </div>
+        </div>
+      )}
+
+      {/* Confetti Celebration */}
+      <ConfettiCelebration show={showCongratsModal} />
+
       <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
         <button onClick={onBack} className="p-2 rounded-full hover:bg-gray-200">
           <ArrowLeft className="h-6 w-6" />
@@ -581,7 +656,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-1">
             <Users className="h-5 w-5" />
-            <span>{(players || []).length}</span>
+            <span>{safePlayers.length}</span>
           </div>
           <div className="flex items-center space-x-1">
             <Trophy className="h-5 w-5" />
@@ -591,6 +666,36 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
             <Timer className="h-5 w-5" />
             <span>{formatTime(gameTime)}</span>
           </div>
+          {/* Leave Room Button */}
+          <button
+            onClick={handleLeaveRoomButton}
+            className="ml-4 px-4 py-2 bg-red-500 text-white rounded-lg font-bold shadow hover:bg-red-600 transition-all duration-200"
+          >
+            Leave Room
+          </button>
+        </div>
+      </div>
+
+      {/* Player List and Prize Pool */}
+      <div className="max-w-4xl mx-auto px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-2">
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-purple-500" />
+          <span className="font-semibold text-gray-700">Players:</span>
+          <div className="flex flex-wrap gap-1">
+            {safePlayers.map(player => (
+              <span
+                key={player.id}
+                className={`px-2 py-1 rounded text-xs font-bold ${player.id === user?.id ? 'bg-purple-500 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                {player.first_name}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Trophy className="h-5 w-5 text-yellow-500" />
+          <span className="font-semibold text-gray-700">Prize Pool:</span>
+          <span className="text-lg font-bold text-purple-700">{prizePool} ETB</span>
         </div>
       </div>
 
@@ -623,7 +728,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         {gamePhase === 'ready' && (
           <div className="mb-4 text-center text-purple-700 font-semibold">
             Game is ready to start.<br />
-            {players.length > 0 && user && players[0].id === user.id && (
+            {safePlayers.length > 0 && user && safePlayers[0].id === user.id && (
               <button
                 onClick={handleStartGame}
                 className="mt-2 px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
@@ -631,7 +736,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
                 Start Game
               </button>
             )}
-            {players.length > 0 && user && players[0].id !== user.id && (
+            {safePlayers.length > 0 && user && safePlayers[0].id !== user.id && (
               <span>Waiting for host to start the game...</span>
             )}
           </div>
@@ -648,13 +753,18 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2">
-            {selectedCard && (
+            {selectedCard && selectedCard.card_data && (
               <BingoCard 
                 cardData={selectedCard.card_data}
                 cardNumber={selectedCard.card_number}
                 onNumberClick={handleMarkNumber}
                 disabled={!session || session.status !== 'active'}
               />
+            )}
+            {selectedCard && !selectedCard.card_data && (
+              <div className="text-center text-red-500 font-semibold mt-4">
+                Card data is missing or invalid. Please select another card.
+              </div>
             )}
             {selectedCard && (
               <div className="mt-2 text-center text-gray-600 text-sm">
@@ -663,21 +773,22 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
             )}
           </div>
           <div className="space-y-4">
-            {/* Drawn Numbers Display */}
+            {/* Drawn Numbers Display with animation for latest */}
             {session && session.status === 'active' && (
               <div className="bg-white rounded-lg p-4 shadow">
                 <h3 className="font-bold mb-3 text-center">Drawn Numbers</h3>
                 <div className="grid grid-cols-5 gap-2 max-h-40 overflow-y-auto">
-                  {(drawnNumbers || []).map((number, index) => (
+                  {safeDrawnNumbers.map((number, index) => (
                     <div
                       key={index}
-                      className="bg-blue-100 text-blue-800 text-center py-2 rounded font-bold"
+                      className={`text-center py-2 rounded font-bold transition-all duration-300
+                        ${number === latestNumber ? 'bg-yellow-300 text-yellow-900 scale-110 shadow-lg animate-bounce' : 'bg-blue-100 text-blue-800'}`}
                     >
                       {number}
                     </div>
                   ))}
                 </div>
-                {(drawnNumbers || []).length === 0 && (
+                {safeDrawnNumbers.length === 0 && (
                   <p className="text-gray-500 text-center text-sm">No numbers drawn yet</p>
                 )}
               </div>
@@ -705,9 +816,9 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
             {/* Players List */}
             <div className="bg-white rounded-lg p-4 shadow">
-              <h3 className="font-bold mb-3">Players ({(players || []).length})</h3>
+              <h3 className="font-bold mb-3">Players ({safePlayers.length})</h3>
               <ul className="space-y-2">
-                {(players || []).map(player => (
+                {safePlayers.map(player => (
                   <li key={player.id} className="flex items-center justify-between">
                     <span className="text-gray-700">{player.first_name}</span>
                     {player.id === user?.id && (

@@ -28,6 +28,9 @@ func CreateRoomHandler(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
+	if body.MaxPlayers <= 0 {
+		body.MaxPlayers = 100
+	}
 	room, err := roomStore.CreateRoom(context.Background(), body.BetAmount, body.MaxPlayers)
 	if err != nil {
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
@@ -67,11 +70,15 @@ func JoinRoomHandler(c *fiber.Ctx) error {
 }
 
 func LeaveRoomHandler(c *fiber.Ctx) error {
+	userID, err := getUserID(c)
+	if err != nil {
+		return err
+	}
 	roomID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
 	}
-	if err := roomStore.LeaveRoom(context.Background(), roomID); err != nil {
+	if err := roomStore.RemoveUserFromRoom(context.Background(), roomID, userID); err != nil {
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 	return c.SendStatus(http.StatusNoContent)

@@ -20,6 +20,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoadingRoom, setIsLoadingRoom] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const { user: telegramUser } = useTelegram();
   
   // Get bet amount from URL parameters
@@ -87,8 +88,10 @@ function App() {
     setWallet((prev) => (prev ? { ...prev, balance: newBalance } : prev));
   };
 
-  const handleRoomSelect = (room: Room) => {
-    setSelectedRoom(room);
+  // Update handleRoomSelect to accept roomId and find the Room object
+  const handleRoomSelect = (roomId: string) => {
+    const room = rooms.find(r => String(r.id) === String(roomId));
+    if (room) setSelectedRoom(room);
   };
 
   const handleBackToLobby = () => {
@@ -199,6 +202,13 @@ function App() {
               </div>
               <h2 className="text-xl font-semibold text-gray-900 mb-2">No Bet Amount</h2>
               <p className="text-gray-600">This app should be launched from the bot with a bet amount.</p>
+              {/* Show available rooms if user is authenticated */}
+              {user && (
+                <RoomList
+                  onJoinRoom={handleRoomSelect}
+                  onViewRoom={handleRoomSelect}
+                />
+              )}
             </div>
           </div>
         )}
