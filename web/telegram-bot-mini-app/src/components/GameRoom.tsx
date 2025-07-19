@@ -401,6 +401,15 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     if (gamePhase === 'finished' && winner) {
       setWinningAmount((winner as any)?.winnings || null);
       setShowCongratsModal(true);
+      // Auto-close modal and return to lobby after 2 seconds
+      const timeout = setTimeout(() => {
+        setShowCongratsModal(false);
+        setSelectedCard(null);
+        setShowCardSelection(true);
+        setForceCardSelection(true);
+        if (onBack) onBack();
+      }, 2000);
+      return () => clearTimeout(timeout);
     }
     if (gamePhase === 'finished' && !winner) {
       setShowCongratsModal(false);
