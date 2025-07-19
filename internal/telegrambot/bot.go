@@ -190,13 +190,13 @@ func getUserBalance(config *Config, user *tgbotapi.User) (string, error) {
 }
 
 func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath("./logo.jpg"))
-	photo.Caption = "🎉 Welcome to Rock Bingo! 🎉\n\nPlay, win, and have fun with friends!"
+	photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FilePath("./logo2.jpg"))
+	photo.Caption = "🎉 Welcome to Rock Bingo! 🎉\n\nPlay, win, and have fun !"
 	photo.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(mainMenu...)
 	_, err := bot.Send(photo)
 	if err != nil {
 		log.Println("Failed to send logo.jpg:", err)
-		m := tgbotapi.NewMessage(msg.Chat.ID, "Welcome to Rock Bingo! Play, win, and have fun with friends!")
+		m := tgbotapi.NewMessage(msg.Chat.ID, "Welcome to Rock Bingo! Play, win, and have fun!")
 		m.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(mainMenu...)
 		bot.Send(m)
 	}

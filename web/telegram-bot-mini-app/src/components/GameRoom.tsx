@@ -33,6 +33,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const [winningAmount, setWinningAmount] = useState<number | null>(null);
   const [disabledCardNumbers, setDisabledCardNumbers] = useState<number[]>([]);
   const [forceCardSelection, setForceCardSelection] = useState(false);
+  const [showGameOverModal, setShowGameOverModal] = useState(false);
   // const navigate = typeof useNavigate === 'function' ? useNavigate() : null;
 
   // Authenticate and set user
@@ -135,12 +136,32 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   }, [session, room.id, user?.id]);
 
   // Game actions
+  // 1. Optimistically update marks after marking a number
   const handleMarkNumber = async (row: number, col: number, number: number) => {
     if (!session || !selectedCard || !user) return;
     try {
       await apiService.markNumber(session.id, selectedCard.card_number, number, user.id);
       setActionMessage('Number marked!');
       setTimeout(() => setActionMessage(null), 1500);
+      // Optimistically update marks
+      setSelectedCard((prev) => {
+        if (!prev) return prev;
+        const cardData = typeof prev.card_data === 'string' ? JSON.parse(prev.card_data) : prev.card_data;
+        const newMarks = cardData.marks.map((rowArr: boolean[], rIdx: number) =>
+          rowArr.map((marked: boolean, cIdx: number) =>
+            rIdx === row && cIdx === col ? true : marked
+          )
+        );
+        return {
+          ...prev,
+          card_data: {
+            ...cardData,
+            marks: newMarks,
+            grid: cardData.grid, // ensure grid is preserved
+          },
+        };
+      });
+      // Optionally, reload other game data except card
       loadGameData();
     } catch (error) {
       setError('Failed to mark number.');
@@ -283,11 +304,43 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     }
   };
 
+  // 2. After card selection, poll for countdown activation
+  const pollCountdownAfterCardSelect = useCallback(() => {
+    let attempts = 0;
+    const maxAttempts = 10; // poll for up to 5 seconds
+    const poll = async () => {
+      attempts++;
+      const countdownData = await apiService.getRoomCountdown(room.id);
+      setCountdown(countdownData);
+      if (countdownData && countdownData.is_active) {
+        // Countdown is now active
+        return;
+      }
+      if (attempts < maxAttempts) {
+        setTimeout(poll, 500);
+      }
+    };
+    poll();
+  }, [room.id]);
+
   const handleCardSelected = (cardNumber: number) => {
-    setShowCardSelection(false);
-    setForceCardSelection(false);
-    loadGameData();
+    if (countdown && countdown.is_active) {
+      loadGameData();
+    } else {
+      setShowCardSelection(false);
+      setForceCardSelection(false);
+      loadGameData();
+      pollCountdownAfterCardSelect(); // start polling for countdown
+    }
   };
+
+  // Effect: when countdown ends and game becomes active, hide card selection
+  useEffect(() => {
+    if ((showCardSelection || forceCardSelection) && session && session.status === 'active') {
+      setShowCardSelection(false);
+      setForceCardSelection(false);
+    }
+  }, [session, showCardSelection, forceCardSelection]);
 
   const handleGameStart = () => {
     // When countdown reaches zero, automatically start the game
@@ -343,23 +396,15 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     gamePhase = 'countdown';
   }
 
-  // Redirect to lobby/card selection after win or game end
-  useEffect(() => {
-    if (gamePhase === 'finished') {
-      // Show a message for 2 seconds, then go back to lobby/card selection
-      const timeout = setTimeout(() => {
-        if (onBack) onBack();
-      }, 2000);
-      return () => clearTimeout(timeout);
-    }
-  }, [gamePhase, onBack]);
-
   // Show congrats modal and handle navigation after win
   useEffect(() => {
     if (gamePhase === 'finished' && winner) {
       setWinningAmount((winner as any)?.winnings || null);
       setShowCongratsModal(true);
-      // Remove the auto-close logic; modal will close on user action
+    }
+    if (gamePhase === 'finished' && !winner) {
+      setShowCongratsModal(false);
+      setShowGameOverModal(true);
     }
   }, [gamePhase, winner, selectedCard]);
 
@@ -393,15 +438,40 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     }
   }, [showCardSelection, disabledCardNumbers, selectedCard]);
 
-  if (showCardSelection || forceCardSelection) {
+  if ((showCardSelection || forceCardSelection) || (!selectedCard && session && session.status === 'active')) {
     return (
-      <CardSelection
-        roomId={room.id}
-        userId={user?.id || ''}
-        onCardSelected={handleCardSelected}
-        onBack={onBack}
-        disabledCardNumbers={disabledCardNumbers}
-      />
+      <div>
+        {/* Show countdown timer on card selection screen if countdown is active and game not started */}
+        {countdown && countdown.is_active && (
+          <Countdown
+            timeLeft={countdown.time_left}
+            isActive={countdown.is_active}
+            onGameStart={handleGameStart}
+          />
+        )}
+        {/* If game is in progress and user has no card, show indicator and disable card selection */}
+        {session && session.status === 'active' && !selectedCard ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <div className="text-yellow-500 mb-4">
+                <svg className="h-16 w-16 mx-auto animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Game In Progress</h2>
+              <p className="text-gray-600">You did not select a card in time. Please wait for the next game to join.</p>
+            </div>
+          </div>
+        ) : (
+          <CardSelection
+            roomId={room.id}
+            userId={user?.id || ''}
+            onCardSelected={handleCardSelected}
+            onBack={onBack}
+            disabledCardNumbers={disabledCardNumbers}
+          />
+        )}
+      </div>
     );
   }
 
@@ -458,6 +528,25 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
                 Leave Room
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Game Over Modal */}
+      {showGameOverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center animate-fade-in">
+            <X className="h-12 w-12 text-gray-400 mx-auto mb-4 animate-bounce" />
+            <h2 className="text-2xl font-bold text-gray-700 mb-2">Game Over</h2>
+            <p className="text-lg text-gray-800 mb-4">Better luck next time!</p>
+            <button
+              onClick={() => {
+                setShowGameOverModal(false);
+                onBack();
+              }}
+              className="w-full px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
+            >
+              Return to Lobby
+            </button>
           </div>
         </div>
       )}
