@@ -142,7 +142,10 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       }
       
       // Always poll countdown and players
-      apiService.getRoomCountdown(room.id).then(setCountdown).catch(() => {});
+      apiService.getRoomCountdown(room.id).then(data => {
+        setCountdown(data);
+        console.log('[GameRoom] Polled countdown:', data);
+      }).catch(() => {});
       apiService.getRoomPlayers(room.id).then(setPlayers).catch(() => {});
     }, 5000);
     return () => clearInterval(timer);
@@ -414,13 +417,18 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     if (gamePhase === 'finished' && winner) {
       setWinningAmount((winner as any)?.winnings || null);
       setShowCongratsModal(true);
-      // Auto-close modal and return to lobby after 2 seconds
+      // Auto-close modal, reset state, and return to lobby after 2 seconds
       const timeout = setTimeout(() => {
         setShowCongratsModal(false);
+        setSession(null);
         setSelectedCard(null);
-        setShowCardSelection(true);
-        setForceCardSelection(true);
-        if (onBack) onBack();
+        setShowCardSelection(false);
+        setForceCardSelection(false);
+        setDrawnNumbers([]);
+        setCountdown(null);
+        setWinner(null);
+        setGameTime(0);
+        onBack();
       }, 2000);
       return () => clearTimeout(timeout);
     }
@@ -514,19 +522,22 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
             </div>
           </div>
         ) : (
-          <CardSelection
-            roomId={room.id}
-            userId={user?.id || ''}
-            onCardSelected={handleCardSelected}
-            onBack={onBack}
-            disabledCardNumbers={disabledCardNumbers}
-            countdown={countdown}
-            selectedCard={selectedCard}
-            onCountdownEnd={() => {
-              setShowCardSelection(false);
-              setForceCardSelection(false);
-            }}
-          />
+          <>
+            {console.log('[GameRoom] Passing countdown to CardSelection:', countdown)}
+            <CardSelection
+              roomId={room.id}
+              userId={user?.id || ''}
+              onCardSelected={handleCardSelected}
+              onBack={onBack}
+              disabledCardNumbers={disabledCardNumbers}
+              countdown={countdown}
+              selectedCard={selectedCard}
+              onCountdownEnd={() => {
+                setShowCardSelection(false);
+                setForceCardSelection(false);
+              }}
+            />
+          </>
         )}
       </div>
     );

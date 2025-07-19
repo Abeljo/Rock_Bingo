@@ -10,6 +10,8 @@ import { useTelegram } from './hooks/useTelegram';
 import { Room, User, Wallet } from './types';
 import { apiService } from './services/api';
 import { getBetAmount } from './utils/urlParams';
+import { BingoCard } from './components/BingoCard';
+import { CardSelection } from './components/CardSelection';
 
 function App() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -21,6 +23,7 @@ function App() {
   const [isLoadingRoom, setIsLoadingRoom] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [selectedCard, setSelectedCard] = useState<any>(null);
   const { user: telegramUser } = useTelegram();
   
   // Get bet amount from URL parameters
@@ -88,14 +91,24 @@ function App() {
     setWallet((prev) => (prev ? { ...prev, balance: newBalance } : prev));
   };
 
-  // Update handleRoomSelect to accept roomId and find the Room object
-  const handleRoomSelect = (roomId: string) => {
+  // Update handleRoomSelect to also fetch and set the user's selected card for the room
+  const handleRoomSelect = async (roomId: string) => {
     const room = rooms.find(r => String(r.id) === String(roomId));
-    if (room) setSelectedRoom(room);
+    if (room && user) {
+      setSelectedRoom(room);
+      // Fetch user's selected card for this room
+      try {
+        const card = await apiService.getMyCard(room.id, user.id);
+        setSelectedCard(card);
+      } catch {
+        setSelectedCard(null);
+      }
+    }
   };
 
   const handleBackToLobby = () => {
     setSelectedRoom(null);
+    setSelectedCard(null);
     hasAttemptedJoin.current = false;
   };
 
@@ -208,6 +221,14 @@ function App() {
                   onJoinRoom={handleRoomSelect}
                   onViewRoom={handleRoomSelect}
                 />
+              )}
+              {/* Mini Card Preview in lobby */}
+              {selectedCard && selectedCard.card_data && (
+                <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40">
+                  <div className="bg-white rounded-lg shadow-lg p-2 border border-purple-200">
+                    <BingoCard cardData={selectedCard.card_data} cardNumber={selectedCard.card_number} disabled={true} />
+                  </div>
+                </div>
               )}
             </div>
           </div>

@@ -57,7 +57,7 @@ type RoomConfig struct {
 	MinPlayersToStart int
 }
 
-var roomConfig = RoomConfig{MinPlayersToStart: 5} // default
+var roomConfig = RoomConfig{MinPlayersToStart: 1} // default
 
 // Add a function to set config from env
 func SetRoomConfigFromEnv() {
@@ -205,6 +205,7 @@ func (s *RoomStore) FindOrCreateRoom(ctx context.Context, betAmount float64) (*B
 
 // Get countdown information for a room
 func (s *RoomStore) GetCountdownInfo(ctx context.Context, roomID int64) (*CountdownInfo, error) {
+	fmt.Printf("[GetCountdownInfo] Called for roomID=%d\n", roomID)
 	var room BingoRoom
 	err := s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
 	if err != nil {
@@ -212,6 +213,7 @@ func (s *RoomStore) GetCountdownInfo(ctx context.Context, roomID int64) (*Countd
 	}
 
 	if room.CountdownStart == nil || room.GameStartTime == nil {
+		fmt.Printf("[GetCountdownInfo] No countdown for roomID=%d\n", roomID)
 		return &CountdownInfo{
 			IsActive:    false,
 			TimeLeft:    0,
@@ -222,12 +224,14 @@ func (s *RoomStore) GetCountdownInfo(ctx context.Context, roomID int64) (*Countd
 	now := time.Now()
 	timeLeft := int(room.GameStartTime.Sub(now).Seconds())
 
-	return &CountdownInfo{
+	info := &CountdownInfo{
 		IsActive:      timeLeft > 0 && room.Status == "waiting",
 		TimeLeft:      timeLeft,
 		GameStarted:   now.After(*room.GameStartTime),
 		GameStartTime: room.GameStartTime,
-	}, nil
+	}
+	fmt.Printf("[GetCountdownInfo] Returning for roomID=%d: %+v\n", roomID, info)
+	return info, nil
 }
 
 // Remove a user from a room: unselect their card, delete their bingo_card, and decrement player count
@@ -250,4 +254,19 @@ func (s *RoomStore) RemoveUserFromRoom(ctx context.Context, roomID, userID int64
 	}
 	// Decrement player count
 	return s.LeaveRoom(ctx, roomID)
+}
+
+// Debug/admin: Force start countdown for a room
+func (s *RoomStore) ForceStartCountdown(ctx context.Context, roomID int64, countdownSeconds int) error {
+	now := time.Now()
+	countdownStart := now
+	gameStartTime := now.Add(time.Duration(countdownSeconds) * time.Second)
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE bingo_rooms 
+		SET countdown_start = $1, 
+			game_start_time = $2,
+			updated_at = NOW()
+		WHERE id = $3
+	`, countdownStart, gameStartTime, roomID)
+	return err
 }

@@ -182,6 +182,23 @@ func FindOrCreateRoomHandler(c *fiber.Ctx) error {
 	return c.JSON(room)
 }
 
+func ForceStartCountdownHandler(c *fiber.Ctx) error {
+	roomID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
+	}
+	seconds := 60 // default
+	if s := c.Query("seconds"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			seconds = n
+		}
+	}
+	if err := roomStore.ForceStartCountdown(context.Background(), roomID, seconds); err != nil {
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
+	}
+	return c.SendStatus(http.StatusNoContent)
+}
+
 func RegisterRoomRoutes(router fiber.Router) {
 	router.Post("/rooms", CreateRoomHandler)
 	router.Post("/rooms/find-or-create", FindOrCreateRoomHandler)
@@ -194,4 +211,6 @@ func RegisterRoomRoutes(router fiber.Router) {
 	router.Get("/rooms/:id/countdown", GetCountdownHandler)
 	router.Get("/rooms/:id/cards", GetRoomCardsHandler)
 	router.Post("/rooms/:id/bet", PlaceBetHandler)
+	// Debug/admin endpoint
+	router.Post("/rooms/:id/force-countdown", ForceStartCountdownHandler)
 }

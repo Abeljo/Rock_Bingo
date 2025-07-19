@@ -42,6 +42,11 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
     }
   }, [countdown, onCountdownEnd]);
 
+  // Debug: log countdown prop
+  useEffect(() => {
+    console.log('[CardSelection] Countdown prop:', countdown);
+  }, [countdown]);
+
   const loadAvailableCards = async () => {
     try {
       setLoading(true);
@@ -100,11 +105,23 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
     );
   }
 
+  const isCardSelectionDisabled = countdown && countdown.is_active && countdown.time_left <= 3;
+
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Countdown at the top */}
+      {/* Enhanced prominent countdown at the top */}
       {countdown && countdown.is_active && (
-        <Countdown timeLeft={countdown.time_left} isActive={countdown.is_active} />
+        <div className="w-full flex flex-col items-center justify-center py-4 bg-gradient-to-r from-blue-100 to-purple-100 border-b-2 border-purple-300 shadow-md mb-4">
+          <div className="flex items-center gap-4">
+            <span className="text-4xl md:text-5xl font-extrabold text-purple-700 animate-pulse">
+              {countdown.time_left}
+            </span>
+            <span className="text-lg md:text-2xl font-semibold text-gray-700">seconds</span>
+          </div>
+          <div className="text-md md:text-lg text-purple-700 font-bold mt-2 animate-fade-in">
+            Game will start soon!
+          </div>
+        </div>
       )}
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
@@ -140,13 +157,15 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
           {availableCards?.map((card) => (
             <button
               key={card.id}
-              onClick={() => !card.is_selected && !disabledCardNumbers.includes(card.card_number) && handleCardSelect(card.card_number)}
-              disabled={card.is_selected || selecting || disabledCardNumbers.includes(card.card_number)}
+              onClick={() => !card.is_selected && !disabledCardNumbers.includes(card.card_number) && !isCardSelectionDisabled && handleCardSelect(card.card_number)}
+              disabled={card.is_selected || selecting || disabledCardNumbers.includes(card.card_number) || isCardSelectionDisabled}
               className={`
                 aspect-square rounded-lg border-2 font-bold text-sm transition-all duration-200
                 ${card.is_selected || disabledCardNumbers.includes(card.card_number)
                   ? 'bg-green-100 border-green-500 text-green-700'
-                  : 'bg-white border-gray-300 hover:border-purple-500 hover:bg-purple-50 text-gray-700'
+                  : isCardSelectionDisabled
+                    ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                    : 'bg-white border-gray-300 hover:border-purple-500 hover:bg-purple-50 text-gray-700'
                 }
                 ${selecting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
               `}
