@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { apiService } from '../services/api';
+import { Countdown } from './Countdown';
+import { BingoCard } from './BingoCard';
 
 interface CardSelectionProps {
   roomId: string;
@@ -8,6 +10,9 @@ interface CardSelectionProps {
   onCardSelected: (cardNumber: number) => void;
   onBack: () => void;
   disabledCardNumbers?: number[];
+  countdown?: { time_left: number; is_active: boolean };
+  onCountdownEnd?: () => void;
+  selectedCard?: any;
 }
 
 interface AvailableCard {
@@ -19,7 +24,7 @@ interface AvailableCard {
   selected_by_user_id?: number;
 }
 
-export function CardSelection({ roomId, userId, onCardSelected, onBack, disabledCardNumbers = [] }: CardSelectionProps) {
+export function CardSelection({ roomId, userId, onCardSelected, onBack, disabledCardNumbers = [], countdown, onCountdownEnd, selectedCard }: CardSelectionProps) {
   const [availableCards, setAvailableCards] = useState<AvailableCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +34,13 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
   useEffect(() => {
     loadAvailableCards();
   }, [roomId]);
+
+  // Auto-transition when countdown reaches 5 seconds
+  useEffect(() => {
+    if (countdown && countdown.is_active && countdown.time_left <= 5 && onCountdownEnd) {
+      onCountdownEnd();
+    }
+  }, [countdown, onCountdownEnd]);
 
   const loadAvailableCards = async () => {
     try {
@@ -90,6 +102,10 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Countdown at the top */}
+      {countdown && countdown.is_active && (
+        <Countdown timeLeft={countdown.time_left} isActive={countdown.is_active} />
+      )}
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-4">
@@ -105,7 +121,6 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
           </div>
         </div>
       </div>
-
       {/* Content */}
       <div className="max-w-7xl mx-auto p-4">
         <div className="mb-6">
@@ -162,6 +177,14 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
           </div>
         )}
       </div>
+      {/* Mini Card Preview at the bottom */}
+      {selectedCard && selectedCard.card_data && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40">
+          <div className="bg-white rounded-lg shadow-lg p-2 border border-purple-200">
+            <BingoCard cardData={selectedCard.card_data} cardNumber={selectedCard.card_number} disabled={true} />
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

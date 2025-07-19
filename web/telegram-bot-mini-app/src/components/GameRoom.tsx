@@ -520,6 +520,12 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
             onCardSelected={handleCardSelected}
             onBack={onBack}
             disabledCardNumbers={disabledCardNumbers}
+            countdown={countdown}
+            selectedCard={selectedCard}
+            onCountdownEnd={() => {
+              setShowCardSelection(false);
+              setForceCardSelection(false);
+            }}
           />
         )}
       </div>
