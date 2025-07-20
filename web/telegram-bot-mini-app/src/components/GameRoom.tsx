@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useReducer } from 'react';
 import { Trophy, Users, Timer, Sparkles, ArrowLeft, Play, Check, X } from 'lucide-react';
 import { BingoCard } from './BingoCard';
 import { CardSelection } from './CardSelection';
@@ -6,12 +6,6 @@ import { Countdown } from './Countdown';
 import { Room, GameSession, Player, User } from '../types';
 import { apiService } from '../services/api';
 import { useTelegram } from '../hooks/useTelegram';
-// import { useNavigate } from 'react-router-dom';
-
-interface GameRoomProps {
-  room: Room;
-  onBack: () => void;
-}
 
 // Add confetti effect for win
 function ConfettiCelebration({ show }: { show: boolean }) {
@@ -26,28 +20,95 @@ function ConfettiCelebration({ show }: { show: boolean }) {
   );
 }
 
-export function GameRoom({ room, onBack }: GameRoomProps) {
+const initialState = {
+  user: null,
+  selectedCard: null,
+  session: null,
+  players: [],
+  loading: true,
+  error: null,
+  gameTime: 0,
+  winner: null,
+  actionMessage: null,
+  showCardSelection: false,
+  drawnNumbers: [],
+  countdown: null,
+  uncalledModalOpen: false,
+  uncalledModalMsg: '',
+  showCongratsModal: false,
+  winningAmount: null,
+  disabledCardNumbers: [],
+  forceCardSelection: false,
+  showGameOverModal: false,
+};
+
+function gameRoomReducer(state, action) {
+  switch (action.type) {
+    case 'SET_USER':
+      return { ...state, user: action.payload };
+    case 'SET_LOADING':
+      return { ...state, loading: action.payload };
+    case 'SET_ERROR':
+      return { ...state, error: action.payload };
+    case 'SET_GAME_DATA':
+      return { ...state, ...action.payload };
+    case 'SET_ACTION_MESSAGE':
+      return { ...state, actionMessage: action.payload };
+    case 'SET_SHOW_CARD_SELECTION':
+      return { ...state, showCardSelection: action.payload };
+    case 'SET_SELECTED_CARD':
+        return { ...state, selectedCard: action.payload };
+    case 'SET_SESSION':
+        return { ...state, session: action.payload };
+    case 'SET_DRAWN_NUMBERS':
+        return { ...state, drawnNumbers: action.payload };
+    case 'SET_COUNTDOWN':
+        return { ...state, countdown: action.payload };
+    case 'SET_WINNER':
+        return { ...state, winner: action.payload };
+    case 'SHOW_UNSUPPORTED_BINGO_CLAIM':
+        return { ...state, uncalledModalOpen: true, uncalledModalMsg: action.payload };
+    case 'HIDE_UNSUPPORTED_BINGO_CLAIM':
+        return { ...state, uncalledModalOpen: false, uncalledModalMsg: '' };
+    case 'SHOW_CONGRATS_MODAL':
+        return { ...state, showCongratsModal: true, winningAmount: action.payload };
+    case 'HIDE_CONGRATS_MODAL':
+        return { ...state, showCongratsModal: false };
+    case 'SHOW_GAME_OVER_MODAL':
+        return { ...state, showGameOverModal: true };
+    case 'HIDE_GAME_OVER_MODAL':
+        return { ...state, showGameOverModal: false };
+    case 'RESET_GAME':
+        return { ...initialState, user: state.user };
+    default:
+      return state;
+  }
+}
+
+export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
   const { user: telegramUser } = useTelegram();
-  const [user, setUser] = useState<User | null>(null);
-  const [selectedCard, setSelectedCard] = useState<any>(null);
-  const [session, setSession] = useState<GameSession | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [gameTime, setGameTime] = useState(0);
-  const [winner, setWinner] = useState<Player | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [showCardSelection, setShowCardSelection] = useState(false);
-  const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
-  const [countdown, setCountdown] = useState<any>(null);
-  const [uncalledModalOpen, setUncalledModalOpen] = useState(false);
-  const [uncalledModalMsg, setUncalledModalMsg] = useState('');
-  const [showCongratsModal, setShowCongratsModal] = useState(false);
-  const [winningAmount, setWinningAmount] = useState<number | null>(null);
-  const [disabledCardNumbers, setDisabledCardNumbers] = useState<number[]>([]);
-  const [forceCardSelection, setForceCardSelection] = useState(false);
-  const [showGameOverModal, setShowGameOverModal] = useState(false);
-  // const navigate = typeof useNavigate === 'function' ? useNavigate() : null;
+  const [state, dispatch] = useReducer(gameRoomReducer, initialState);
+  const {
+    user,
+    selectedCard,
+    session,
+    players,
+    loading,
+    error,
+    gameTime,
+    winner,
+    actionMessage,
+    showCardSelection,
+    drawnNumbers,
+    countdown,
+    uncalledModalOpen,
+    uncalledModalMsg,
+    showCongratsModal,
+    winningAmount,
+    disabledCardNumbers,
+    forceCardSelection,
+    showGameOverModal,
+  } = state;
 
   // Authenticate and set user
   useEffect(() => {
@@ -57,66 +118,68 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
         username: telegramUser.username,
         first_name: telegramUser.first_name,
         last_name: telegramUser.last_name,
-      }).then(setUser).catch(() => setUser(null));
+      }).then(user => {
+          dispatch({ type: 'SET_USER', payload: user });
+          apiService.setAuthUser(user);
+        }).catch(() => dispatch({ type: 'SET_USER', payload: null }));
     }
   }, [telegramUser]);
 
   // Main game data loader
   const loadGameData = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
-    setError(null);
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
     try {
       // 1. Join the room
-      await apiService.joinRoom(room.id, user.id);
+      await apiService.joinRoom(room.id);
 
       // 2. Check if user has selected a card
-      const myCard = await apiService.getMyCard(room.id, user.id);
+      const myCard = await apiService.getMyCard(room.id);
       if (myCard) {
-        setSelectedCard(myCard);
+        dispatch({ type: 'SET_SELECTED_CARD', payload: myCard });
       } else {
         // No card selected yet, show card selection
-        setShowCardSelection(true);
-        setLoading(false);
+        dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: true });
+        dispatch({ type: 'SET_LOADING', payload: false });
         return;
       }
 
       // 3. Get or create session for the room
       let gameSession = await apiService.getRoomSession(room.id);
       if (gameSession && gameSession.drawn_numbers) {
-        setDrawnNumbers(gameSession.drawn_numbers);
+        dispatch({ type: 'SET_DRAWN_NUMBERS', payload: gameSession.drawn_numbers });
       }
-      setSession(gameSession);
+      dispatch({ type: 'SET_SESSION', payload: gameSession });
 
       // 4. Get players
       const playersData = await apiService.getRoomPlayers(room.id);
-      setPlayers(playersData);
+      dispatch({ type: 'SET_GAME_DATA', payload: { players: playersData } });
 
       // 5. Get countdown information
       try {
         const countdownData = await apiService.getRoomCountdown(room.id);
-        console.log('Countdown data:', countdownData);
-        setCountdown(countdownData);
+        dispatch({ type: 'SET_COUNTDOWN', payload: countdownData });
       } catch (err) {
         console.log('Countdown error:', err);
-        setCountdown(null);
+        dispatch({ type: 'SET_COUNTDOWN', payload: null });
       }
 
       // 6. Get winners if session exists
       if (gameSession) {
         const winners = await apiService.getWinners(gameSession.id);
         if (winners && winners.length > 0) {
-          setWinner(winners.find((w: any) => w.user_id === user.id) || null);
+            dispatch({ type: 'SET_WINNER', payload: winners.find((w: any) => w.user_id === user.id) || null });
         } else {
-          setWinner(null);
+            dispatch({ type: 'SET_WINNER', payload: null });
         }
       } else {
-        setWinner(null);
+        dispatch({ type: 'SET_WINNER', payload: null });
       }
     } catch (err: any) {
-      setError('Failed to load game data: ' + (err.message || err));
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to load game data: ' + (err.message || err) });
     } finally {
-      setLoading(false);
+        dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, [room.id, user]);
 
@@ -134,21 +197,28 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       try {
         // Poll countdown
         const countdownData = await apiService.getRoomCountdown(room.id);
-        setCountdown(countdownData);
+        dispatch({ type: 'SET_COUNTDOWN', payload: countdownData });
         // Poll session
         const gameSession = await apiService.getRoomSession(room.id);
-        setSession(gameSession);
+        console.log('Polled session:', gameSession); // <-- LOGGING
+        dispatch({ type: 'SET_SESSION', payload: gameSession });
         if (gameSession && gameSession.drawn_numbers) {
-          setDrawnNumbers(gameSession.drawn_numbers);
+            dispatch({ type: 'SET_DRAWN_NUMBERS', payload: gameSession.drawn_numbers });
         }
         // Poll players
         const playersData = await apiService.getRoomPlayers(room.id);
-        setPlayers(playersData);
+        dispatch({ type: 'SET_GAME_DATA', payload: { players: playersData } });
         // If countdown ended and session is not active, try to start session
         if (countdownData && countdownData.time_left <= 0 && (!gameSession || gameSession.status !== 'active')) {
           try {
-            await apiService.createSession(room.id, user.id);
-            // Session will be picked up on next poll
+            await apiService.createSession(room.id);
+            // Immediately fetch and set the session after creation
+            const newSession = await apiService.getRoomSession(room.id);
+            console.log('Fetched session after creation:', newSession);
+            dispatch({ type: 'SET_SESSION', payload: newSession });
+            if (newSession && newSession.drawn_numbers) {
+              dispatch({ type: 'SET_DRAWN_NUMBERS', payload: newSession.drawn_numbers });
+            }
           } catch (e) {
             // Ignore error if session already exists
           }
@@ -167,152 +237,60 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const handleMarkNumber = async (row: number, col: number, number: number) => {
     if (!session || !selectedCard || !user) return;
     try {
-      await apiService.markNumber(session.id, selectedCard.card_number, number, user.id);
-      setActionMessage('Number marked!');
-      setTimeout(() => setActionMessage(null), 1500);
+      await apiService.markNumber(session.id, selectedCard.card_number, number);
+      dispatch({ type: 'SET_ACTION_MESSAGE', payload: 'Number marked!' });
+      setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 1500);
       // Fetch the latest card data from backend
-      const updatedCard = await apiService.getMyCard(room.id, user.id);
-      setSelectedCard(updatedCard);
+      const updatedCard = await apiService.getMyCard(room.id);
+      dispatch({ type: 'SET_SELECTED_CARD', payload: updatedCard });
       // Optionally, reload other game data
       loadGameData();
     } catch (error) {
-      setError('Failed to mark number.');
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to mark number.' });
     }
   };
 
   const handleDrawNumber = async () => {
     if (!session || !user) return;
     try {
-      const result = await apiService.drawNumber(session.id, user.id);
-      setDrawnNumbers(prev => [...prev, result.number]);
-      setActionMessage(`Number ${result.number} drawn!`);
-      setTimeout(() => setActionMessage(null), 1500);
+      const result = await apiService.drawNumber(session.id);
+      dispatch({ type: 'SET_DRAWN_NUMBERS', payload: [...drawnNumbers, result.number] });
+      dispatch({ type: 'SET_ACTION_MESSAGE', payload: `Number ${result.number} drawn!` });
+      setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 1500);
       loadGameData();
     } catch (error) {
-      setError('Failed to draw number.');
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to draw number.' });
     }
   };
 
   const handleClaimBingo = async () => {
     if (!session || !selectedCard || !user) return;
-    
-    // Check if card has a winning pattern before claiming
-    if (!selectedCard.card_data) {
-      setError('No card data available.');
-      return;
-    }
-
-    // --- NEW: Check if all marked numbers are in drawn numbers ---
-    const cardData = typeof selectedCard.card_data === 'string' ? JSON.parse(selectedCard.card_data) : selectedCard.card_data;
-    if (!allMarkedNumbersAreCalled(cardData, drawnNumbers)) {
-      setUncalledModalMsg('You have marked numbers that have not been called yet. Please only mark called numbers before claiming Bingo!');
-      setUncalledModalOpen(true);
-      setTimeout(() => setUncalledModalOpen(false), 3000);
-      return;
-    }
-    // --- END NEW ---
 
     try {
-      if (typeof cardData === 'object' && !hasWinningPattern(cardData)) {
-        setError('No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!');
-        return;
-      }
-      
-      await apiService.claimBingo(session.id, selectedCard.card_number, user.id);
-      setActionMessage('Bingo claimed! Waiting for validation...');
-      setTimeout(() => setActionMessage(null), 2000);
+      await apiService.claimBingo(session.id, selectedCard.card_number);
+      dispatch({ type: 'SET_ACTION_MESSAGE', payload: 'Bingo claimed! Waiting for validation...' });
+      setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 2000);
       loadGameData();
     } catch (error: any) {
       if (error.message && error.message.includes('winning bingo pattern')) {
-        setError('No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!');
+        dispatch({ type: 'SET_ERROR', payload: 'No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!' });
       } else {
-        setError('Failed to claim bingo.');
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to claim bingo.' });
       }
     }
-  };
-
-  // Helper function to check for winning pattern
-  const hasWinningPattern = (cardData: any) => {
-    if (!cardData || !cardData.marks) return false;
-    
-    const marks = cardData.marks;
-    
-    // Check rows
-    for (let i = 0; i < 5; i++) {
-      let rowComplete = true;
-      for (let j = 0; j < 5; j++) {
-        if (!marks[i][j]) {
-          rowComplete = false;
-          break;
-        }
-      }
-      if (rowComplete) return true;
-    }
-    
-    // Check columns
-    for (let j = 0; j < 5; j++) {
-      let colComplete = true;
-      for (let i = 0; i < 5; i++) {
-        if (!marks[i][j]) {
-          colComplete = false;
-          break;
-        }
-      }
-      if (colComplete) return true;
-    }
-    
-    // Check diagonal (top-left to bottom-right)
-    let diagComplete = true;
-    for (let i = 0; i < 5; i++) {
-      if (!marks[i][i]) {
-        diagComplete = false;
-        break;
-      }
-    }
-    if (diagComplete) return true;
-    
-    // Check diagonal (top-right to bottom-left)
-    diagComplete = true;
-    for (let i = 0; i < 5; i++) {
-      if (!marks[i][4-i]) {
-        diagComplete = false;
-        break;
-      }
-    }
-    if (diagComplete) return true;
-    
-    return false;
-  };
-
-  // Helper function to check if all marked numbers are in drawn numbers
-  const allMarkedNumbersAreCalled = (cardData: any, drawnNumbers: number[]) => {
-    if (!cardData || !cardData.grid || !cardData.marks) return false;
-    for (let i = 0; i < 5; i++) {
-      for (let j = 0; j < 5; j++) {
-        if (cardData.marks[i][j]) {
-          const number = cardData.grid[i][j];
-          if (!drawnNumbers.includes(number)) {
-            return false;
-          }
-        }
-      }
-    }
-    return true;
   };
 
   const handleStartGame = async () => {
     if (!room || !user) return;
-    console.log('handleStartGame called', { roomId: room.id, userId: user.id });
     try {
-      const newSession = await apiService.createSession(room.id, user.id);
-      console.log('Session created:', newSession);
-      setSession(newSession);
-      setActionMessage('Game started!');
-      setTimeout(() => setActionMessage(null), 1500);
+      const newSession = await apiService.createSession(room.id);
+      dispatch({ type: 'SET_SESSION', payload: newSession });
+      dispatch({ type: 'SET_ACTION_MESSAGE', payload: 'Game started!' });
+      setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 1500);
       loadGameData();
     } catch (error) {
       console.error('Failed to start game:', error);
-      setError('Failed to start game.');
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to start game.' });
     }
   };
 
@@ -323,7 +301,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     const poll = async () => {
       attempts++;
       const countdownData = await apiService.getRoomCountdown(room.id);
-      setCountdown(countdownData);
+      dispatch({ type: 'SET_COUNTDOWN', payload: countdownData });
       if (countdownData && countdownData.is_active) {
         // Countdown is now active
         return;
@@ -339,16 +317,15 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const handleCardSelected = async (cardNumber: number) => {
     // Fetch the full card data and set it for preview
     if (user) {
-      const cardData = await apiService.getMyCard(room.id, user.id);
+      const cardData = await apiService.getMyCard(room.id);
       if (cardData) {
-        setSelectedCard(cardData);
+        dispatch({ type: 'SET_SELECTED_CARD', payload: cardData });
       }
     }
     if (countdown && countdown.is_active) {
       loadGameData();
     } else {
-      setShowCardSelection(false);
-      setForceCardSelection(false);
+      dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false });
       loadGameData();
       pollCountdownAfterCardSelect(); // start polling for countdown
     }
@@ -357,48 +334,38 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   // Effect: when countdown ends and game becomes active, hide card selection
   useEffect(() => {
     if ((showCardSelection || forceCardSelection) && session && session.status === 'active') {
-      setShowCardSelection(false);
-      setForceCardSelection(false);
+        dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false });
     }
   }, [session, showCardSelection, forceCardSelection]);
 
   const handleGameStart = () => {
     // When countdown reaches zero, automatically start the game
-    console.log('handleGameStart called', { session, countdown });
     if (!session) {
-      console.log('Starting game automatically - countdown finished');
       handleStartGame();
-    } else {
-      console.log('Not starting game - session already exists:', { hasSession: !!session, timeLeft: countdown?.time_left });
     }
   };
 
   // Auto-draw numbers when game is active
   useEffect(() => {
     if (!session || session.status !== 'active') {
-      console.log('Auto-draw not active:', { session: !!session, status: session?.status });
       return;
     }
 
-    console.log('Starting auto-draw polling for session:', session.id);
     const autoDrawInterval = setInterval(async () => {
       try {
-        console.log('Auto-drawing number for session:', session.id);
         const result = await apiService.autoDrawNumber(session.id);
-        console.log('Auto-draw result:', result);
-        setDrawnNumbers(prev => [...prev, result.number]);
-        setActionMessage(`Number ${result.number} called automatically!`);
-        setTimeout(() => setActionMessage(null), 2000);
+        dispatch({ type: 'SET_DRAWN_NUMBERS', payload: [...drawnNumbers, result.number] });
+        dispatch({ type: 'SET_ACTION_MESSAGE', payload: `Number ${result.number} called automatically!` });
+        setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 2000);
       } catch (error) {
         console.error('Auto-draw failed:', error);
       }
     }, 5000); // Draw a number every 5 seconds
 
     return () => {
-      console.log('Clearing auto-draw interval');
       clearInterval(autoDrawInterval);
     };
-  }, [session?.id, session?.status]);
+  }, [session?.id, session?.status, drawnNumbers]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -419,28 +386,19 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   // Show congrats modal and handle navigation after win
   useEffect(() => {
     if (gamePhase === 'finished' && winner) {
-      setWinningAmount((winner as any)?.winnings || null);
-      setShowCongratsModal(true);
+        dispatch({ type: 'SHOW_CONGRATS_MODAL', payload: (winner as any)?.winnings || null });
       // Auto-close modal, reset state, and return to lobby after 2 seconds
       const timeout = setTimeout(() => {
-        setShowCongratsModal(false);
-        setSession(null);
-        setSelectedCard(null);
-        setShowCardSelection(false);
-        setForceCardSelection(false);
-        setDrawnNumbers([]);
-        setCountdown(null);
-        setWinner(null);
-        setGameTime(0);
+        dispatch({ type: 'HIDE_CONGRATS_MODAL' });
+        dispatch({ type: 'RESET_GAME' });
         onBack();
       }, 2000);
       return () => clearTimeout(timeout);
     }
     if (gamePhase === 'finished' && !winner) {
-      setShowCongratsModal(false);
-      setShowGameOverModal(true);
+        dispatch({ type: 'SHOW_GAME_OVER_MODAL' });
     }
-  }, [gamePhase, winner, selectedCard]);
+  }, [gamePhase, winner, onBack]);
 
   // Optionally, play a sound on win
   useEffect(() => {
@@ -452,18 +410,17 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
 
   // Handler for Select Another Card
   const handleSelectAnotherCard = () => {
-    setShowCongratsModal(false);
+    dispatch({ type: 'HIDE_CONGRATS_MODAL' });
     if (selectedCard) {
-      setDisabledCardNumbers((prev) => [...prev, selectedCard.card_number]);
+        dispatch({ type: 'SET_GAME_DATA', payload: { disabledCardNumbers: [...disabledCardNumbers, selectedCard.card_number] } });
     }
-    setSelectedCard(null); // Clear selected card so CardSelection is shown
-    setShowCardSelection(true);
-    setForceCardSelection(true);
+    dispatch({ type: 'SET_SELECTED_CARD', payload: null }); // Clear selected card so CardSelection is shown
+    dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: true });
   };
 
   // Handler for Leave Room
   const handleLeaveRoom = () => {
-    setShowCongratsModal(false);
+    dispatch({ type: 'HIDE_CONGRATS_MODAL' });
     if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
       window.Telegram.WebApp.close();
     } else {
@@ -476,14 +433,14 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   const handleLeaveRoomButton = async () => {
     if (!room || !user) return;
     try {
-      await apiService.leaveRoom(room.id, user.id);
+      await apiService.leaveRoom(room.id);
       if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
         window.Telegram.WebApp.close();
       } else {
         onBack();
       }
     } catch (e) {
-      setError('Failed to leave room.');
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to leave room.' });
     }
   };
 
@@ -529,19 +486,16 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
           </div>
         ) : (
           <>
-            {console.log('[GameRoom] Passing countdown to CardSelection:', countdown)}
             <CardSelection
               roomId={room.id}
-              userId={user?.id || ''}
               onCardSelected={handleCardSelected}
-              onCardSelectedWithData={setSelectedCard} // NEW: pass setter for preview
+              onCardSelectedWithData={(card) => dispatch({ type: 'SET_SELECTED_CARD', payload: card })} // NEW: pass setter for preview
               onBack={onBack}
               disabledCardNumbers={disabledCardNumbers}
               countdown={countdown}
               selectedCard={selectedCard}
               onCountdownEnd={() => {
-                setShowCardSelection(false);
-                setForceCardSelection(false);
+                dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false });
               }}
             />
           </>
@@ -570,7 +524,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
           <p className="text-gray-600 mb-6">{error}</p>
           <button
             onClick={() => {
-              setError(null);
+                dispatch({ type: 'SET_ERROR', payload: null });
               onBack();
             }}
             className="bg-purple-500 hover:bg-purple-600 text-white px-6 py-2 rounded-lg transition-colors"
@@ -632,7 +586,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
             <p className="text-lg text-gray-800 mb-4">Better luck next time!</p>
             <button
               onClick={() => {
-                setShowGameOverModal(false);
+                dispatch({ type: 'SHOW_GAME_OVER_MODAL', payload: false });
                 onBack();
               }}
               className="w-full px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
@@ -645,9 +599,6 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       {/* Countdown Component */}
       {countdown && (
         <>
-          {/* <div className="fixed top-16 left-4 z-50 bg-white p-2 rounded text-xs">
-            Debug: {JSON.stringify(countdown)}
-          </div> */}
           <Countdown
             timeLeft={countdown.time_left}
             isActive={countdown.is_active}

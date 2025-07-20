@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"rockbingo/internal/db"
-	"strconv"
 
 	"log"
 
@@ -15,15 +14,6 @@ var userStore *db.UserStore
 
 func InitUserHandlers(store *db.UserStore) {
 	userStore = store
-}
-
-// Stub: get user ID from context (replace with real auth/session)
-func getUserID(c *fiber.Ctx) (int64, error) {
-	idStr := c.Get("X-User-ID")
-	if idStr == "" {
-		return 0, fiber.NewError(http.StatusUnauthorized, "Missing user ID header")
-	}
-	return strconv.ParseInt(idStr, 10, 64)
 }
 
 func TelegramAuthHandler(c *fiber.Ctx) error {

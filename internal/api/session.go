@@ -18,6 +18,10 @@ func InitSessionHandlers(store *db.SessionStore) {
 }
 
 func CreateSessionHandler(c *fiber.Ctx) error {
+	userID, err := getUserID(c)
+	if err != nil {
+		return err
+	}
 	type req struct {
 		RoomID int64 `json:"room_id"`
 	}
@@ -26,7 +30,7 @@ func CreateSessionHandler(c *fiber.Ctx) error {
 		log.Printf("[CreateSessionHandler] BodyParser error: %v", err)
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
-	log.Printf("[CreateSessionHandler] Starting session for roomID=%d", body.RoomID)
+	log.Printf("[CreateSessionHandler] userID=%d starting session for roomID=%d", userID, body.RoomID)
 	session, err := sessionStore.StartSession(context.Background(), body.RoomID)
 	if err != nil {
 		log.Printf("[CreateSessionHandler] StartSession error: %v", err)
@@ -48,12 +52,16 @@ func GetSessionHandler(c *fiber.Ctx) error {
 }
 
 func DrawNumberHandler(c *fiber.Ctx) error {
+	userID, err := getUserID(c)
+	if err != nil {
+		return err
+	}
 	sessionID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		log.Printf("[DrawNumberHandler] Invalid session ID: %v", err)
 		return fiber.NewError(http.StatusBadRequest, "Invalid session ID")
 	}
-	log.Printf("[DrawNumberHandler] Drawing number for sessionID=%d", sessionID)
+	log.Printf("[DrawNumberHandler] userID=%d drawing number for sessionID=%d", userID, sessionID)
 	number, err := sessionStore.DrawNumber(context.Background(), sessionID)
 	if err != nil {
 		log.Printf("[DrawNumberHandler] DrawNumber error: %v", err)

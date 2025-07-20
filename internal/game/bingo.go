@@ -138,3 +138,25 @@ func (c *Card) HasWinningPattern() bool {
 
 	return false
 }
+
+// ValidateBongo validates the card against the drawn numbers.
+func (c *Card) ValidateBingo(drawnNumbers []int) bool {
+	// Create a map of drawn numbers for quick lookup
+	drawnMap := make(map[int]bool)
+	for _, num := range drawnNumbers {
+		drawnMap[num] = true
+	}
+
+	// Check if all marked numbers were actually drawn
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 5; j++ {
+			if c.Marks[i][j] {
+				if !drawnMap[c.Grid[i][j]] {
+					return false // Marked number was not drawn
+				}
+			}
+		}
+	}
+
+	return c.HasWinningPattern()
+}

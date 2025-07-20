@@ -28,6 +28,8 @@ type BingoRoom struct {
 	UpdatedAt      time.Time  `db:"updated_at"      json:"updated_at"`
 }
 
+type Room = BingoRoom
+
 // CountdownInfo represents countdown information for a room
 type CountdownInfo struct {
 	IsActive      bool       `json:"is_active"`

@@ -38,10 +38,7 @@ func (s *UserStore) FindOrCreateByTelegram(ctx context.Context, telegramID int64
 			return nil, werr
 		}
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &user, nil
+	return &user, err
 }
 
 // Get user by ID

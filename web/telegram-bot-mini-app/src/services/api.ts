@@ -1,16 +1,23 @@
-import { Room, BingoCard, GameSession, Wallet, Transaction, Player } from '../types';
+import { Room, BingoCard, GameSession, Wallet, Transaction, Player, User } from '../types';
 
 const API_BASE_URL = 'http://localhost:3000/api';
 
 class ApiService {
+  private user: User | null = null;
+
   private async request(endpoint: string, options: RequestInit = {}) {
-    const finalHeaders = {
+    const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
     };
+
+    if (this.user) {
+      headers['X-User-ID'] = this.user.id.toString();
+    }
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
-      headers: finalHeaders,
+      headers,
     });
 
     if (!response.ok) {
@@ -49,11 +56,19 @@ class ApiService {
   }
 
   // Auth
+  setAuthUser(user: User) {
+    this.user = user;
+  }
+
   async authenticateTelegram(data: any) {
-    return this.request('/auth/telegram', {
+    const user = await this.request('/auth/telegram', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    if (user) {
+      this.setAuthUser(user);
+    }
+    return user;
   }
 
   // Profile
@@ -84,32 +99,28 @@ class ApiService {
     return this.request(`/rooms/${id}`);
   }
 
-  async findOrCreateRoom(userId: string, betAmount: number): Promise<Room> {
+  async findOrCreateRoom(betAmount: number): Promise<Room> {
     return this.request('/rooms/find-or-create', {
       method: 'POST',
-      headers: { 'X-User-ID': userId },
       body: JSON.stringify({ bet_amount: betAmount }),
     });
   }
 
-  async joinRoom(id: string, userId?: string) {
+  async joinRoom(id: string) {
     return this.request(`/rooms/${id}/join`, { 
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
     });
   }
 
-  async leaveRoom(id: string, userId?: string) {
+  async leaveRoom(id: string) {
     return this.request(`/rooms/${id}/leave`, { 
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
     });
   }
 
-  async startRoom(id: string, userId?: string) {
+  async startRoom(id: string) {
     return this.request(`/rooms/${id}/start`, { 
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
     });
   }
 
@@ -129,19 +140,16 @@ class ApiService {
     return this.request(`/rooms/${roomId}/available-cards`);
   }
 
-  async selectCard(roomId: string, cardNumber: number, userId?: string): Promise<void> {
+  async selectCard(roomId: string, cardNumber: number): Promise<void> {
     return this.request(`/rooms/${roomId}/select-card`, {
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
       body: JSON.stringify({ card_number: cardNumber }),
     });
   }
 
-  async getMyCard(roomId: string, userId?: string): Promise<any> {
+  async getMyCard(roomId: string): Promise<any> {
     try {
-      return await this.request(`/rooms/${roomId}/my-card`, {
-        headers: userId ? { 'X-User-ID': userId } : {},
-      });
+      return await this.request(`/rooms/${roomId}/my-card`);
     } catch (error) {
       // 404 is expected when no card is selected yet
       if (error instanceof Error && error.message.includes('404')) {
@@ -152,19 +160,17 @@ class ApiService {
   }
 
   // Cards
-  async createCard(roomId: string, userId?: string): Promise<BingoCard> {
+  async createCard(roomId: string): Promise<BingoCard> {
     return this.request('/cards', {
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
       body: JSON.stringify({ room_id: roomId }),
     });
   }
 
   // Session
-  async createSession(roomId: string, userId?: string): Promise<GameSession> {
+  async createSession(roomId: string): Promise<GameSession> {
     return this.request('/sessions', {
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
       body: JSON.stringify({ room_id: roomId }),
     });
   }
@@ -173,10 +179,9 @@ class ApiService {
     return this.request(`/sessions/${id}`);
   }
 
-  async drawNumber(id: string, userId?: string): Promise<{ number: number }> {
+  async drawNumber(id: string): Promise<{ number: number }> {
     return this.request(`/sessions/${id}/draw`, { 
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
     });
   }
 
@@ -186,18 +191,16 @@ class ApiService {
     });
   }
 
-  async markNumber(sessionId: string, cardNumber: number, number: number, userId?: string): Promise<void> {
+  async markNumber(sessionId: string, cardNumber: number, number: number): Promise<void> {
     return this.request(`/sessions/${sessionId}/mark`, {
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
       body: JSON.stringify({ card_number: cardNumber, number }),
     });
   }
 
-  async claimBingo(sessionId: string, cardNumber: number, userId?: string): Promise<void> {
+  async claimBingo(sessionId: string, cardNumber: number): Promise<void> {
     return this.request(`/sessions/${sessionId}/bingo`, {
       method: 'POST',
-      headers: userId ? { 'X-User-ID': userId } : {},
       body: JSON.stringify({ card_number: cardNumber }),
     });
   }
@@ -207,26 +210,24 @@ class ApiService {
   }
 
   // Wallet
-  async getWallet(userId?: string): Promise<Wallet> {
-    return this.request('/wallet', userId ? { headers: { 'X-User-ID': userId } } : {});
+  async getWallet(): Promise<Wallet> {
+    return this.request('/wallet');
   }
 
-  async getTransactions(userId?: string): Promise<Transaction[]> {
-    return this.request('/transactions', userId ? { headers: { 'X-User-ID': userId } } : {});
+  async getTransactions(): Promise<Transaction[]> {
+    return this.request('/transactions');
   }
 
-  async deposit(userId: string, data: any) {
+  async deposit(data: any) {
     return this.request('/deposit', {
       method: 'POST',
-      headers: { 'X-User-ID': userId },
       body: JSON.stringify(data),
     });
   }
 
-  async withdraw(userId: string, data: any) {
+  async withdraw(data: any) {
     return this.request('/withdraw', {
       method: 'POST',
-      headers: { 'X-User-ID': userId },
       body: JSON.stringify(data),
     });
   }
