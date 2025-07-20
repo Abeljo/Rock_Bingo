@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -81,42 +82,33 @@ func lookupEnvInt(key string) (int, bool) {
 
 // Join a room (increment current_players and start countdown if first player)
 func (s *RoomStore) JoinRoom(ctx context.Context, roomID int64) error {
-	var room BingoRoom
-	err := s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
-	if err != nil {
-		return err
-	}
-
-	// Always increment current_players first
-	_, err = s.DB.ExecContext(ctx, `
-		UPDATE bingo_rooms 
-		SET current_players = current_players + 1,
+	// Atomically increment current_players and set countdown if needed
+	res, err := s.DB.ExecContext(ctx, `
+		UPDATE bingo_rooms
+		SET
+			current_players = current_players + 1,
+			countdown_start = CASE
+				WHEN current_players + 1 >= $2 AND countdown_start IS NULL THEN NOW()
+				ELSE countdown_start
+			END,
+			game_start_time = CASE
+				WHEN current_players + 1 >= $2 AND countdown_start IS NULL THEN NOW() + INTERVAL '60 seconds'
+				ELSE game_start_time
+			END,
 			updated_at = NOW()
 		WHERE id = $1 AND current_players < max_players
-	`, roomID)
+	`, roomID, roomConfig.MinPlayersToStart)
 	if err != nil {
+		log.Printf("[JoinRoom] Error updating room: %v", err)
 		return err
 	}
-
-	// Re-fetch the room to get the updated current_players
-	err = s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
-	if err != nil {
-		return err
-	}
-
-	if room.CurrentPlayers >= roomConfig.MinPlayersToStart && room.CountdownStart == nil {
-		now := time.Now()
-		countdownStart := now
-		gameStartTime := now.Add(60 * time.Second) // 60 second countdown
-		_, err = s.DB.ExecContext(ctx, `
-			UPDATE bingo_rooms 
-			SET countdown_start = $1, 
-				game_start_time = $2,
-				updated_at = NOW()
-			WHERE id = $3
-		`, countdownStart, gameStartTime, roomID)
-		if err != nil {
-			return err
+	if rows, _ := res.RowsAffected(); rows > 0 {
+		var room BingoRoom
+		err = s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
+		if err == nil {
+			if room.CountdownStart != nil {
+				log.Printf("[JoinRoom] Countdown started for room %d at %v, game starts at %v", roomID, room.CountdownStart, room.GameStartTime)
+			}
 		}
 	}
 	return nil
@@ -127,6 +119,20 @@ func (s *RoomStore) LeaveRoom(ctx context.Context, roomID int64) error {
 	_, err := s.DB.ExecContext(ctx, `
 		UPDATE bingo_rooms SET current_players = GREATEST(current_players - 1, 0) WHERE id = $1
 	`, roomID)
+	if err != nil {
+		log.Printf("[LeaveRoom] Error decrementing player count: %v", err)
+		return err
+	}
+	var room BingoRoom
+	err = s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
+	if err == nil && room.CurrentPlayers == 0 {
+		_, err2 := s.DB.ExecContext(ctx, `
+			UPDATE bingo_rooms SET countdown_start = NULL, game_start_time = NULL, updated_at = NOW() WHERE id = $1
+		`, roomID)
+		if err2 == nil {
+			log.Printf("[LeaveRoom] Countdown reset for room %d because it is now empty", roomID)
+		}
+	}
 	return err
 }
 
@@ -268,5 +274,16 @@ func (s *RoomStore) ForceStartCountdown(ctx context.Context, roomID int64, count
 			updated_at = NOW()
 		WHERE id = $3
 	`, countdownStart, gameStartTime, roomID)
+	return err
+}
+
+// Add a function to force reset countdown (admin tool)
+func (s *RoomStore) ResetCountdown(ctx context.Context, roomID int64) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE bingo_rooms SET countdown_start = NULL, game_start_time = NULL, updated_at = NOW() WHERE id = $1
+	`, roomID)
+	if err == nil {
+		log.Printf("[ResetCountdown] Countdown reset for room %d by admin", roomID)
+	}
 	return err
 }

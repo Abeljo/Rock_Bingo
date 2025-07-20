@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"rockbingo/internal/game"
 	"time"
@@ -23,6 +24,16 @@ func NewSessionStore(db *sqlx.DB) *SessionStore {
 
 // Start a new game session
 func (s *SessionStore) StartSession(ctx context.Context, roomID int64) (*GameSession, error) {
+	// Check if there is already an active session for this room
+	var existing GameSession
+	err := s.DB.GetContext(ctx, &existing, `
+		SELECT * FROM game_sessions WHERE room_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1
+	`, roomID)
+	if err == nil && existing.ID != 0 {
+		log.Printf("[StartSession] Skipped: Active session already exists for room %d (session %d)", roomID, existing.ID)
+		return &existing, nil
+	}
+	log.Printf("[StartSession] Creating new session for room %d", roomID)
 	callouts := game.GenerateCallouts()
 	remaining, err := json.Marshal(callouts)
 	if err != nil {
@@ -40,6 +51,7 @@ func (s *SessionStore) StartSession(ctx context.Context, roomID int64) (*GameSes
 		RETURNING *
 	`, roomID, time.Now(), drawn, remaining)
 	if err != nil {
+		log.Printf("[StartSession] Error creating session for room %d: %v", roomID, err)
 		return nil, err
 	}
 
@@ -48,9 +60,11 @@ func (s *SessionStore) StartSession(ctx context.Context, roomID int64) (*GameSes
 		UPDATE bingo_rooms SET status = 'active', updated_at = NOW() WHERE id = $1
 	`, roomID)
 	if err != nil {
+		log.Printf("[StartSession] Error updating room status for room %d: %v", roomID, err)
 		return nil, err
 	}
 
+	log.Printf("[StartSession] Session %d created for room %d", session.ID, roomID)
 	return &session, nil
 }
 
@@ -116,10 +130,12 @@ func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, er
 
 // Mark a number on a user's selected card
 func (s *SessionStore) MarkNumberOnCard(ctx context.Context, userID int64, cardNumber int, number int) error {
+	// Get the user's bingo_card for this room/card
 	var cardData []byte
 	err := s.DB.GetContext(ctx, &cardData, `
-		SELECT card_data FROM available_cards 
-		WHERE selected_by_user_id = $1 AND card_number = $2
+		SELECT bc.card_data FROM bingo_cards bc
+		JOIN available_cards ac ON ac.room_id = bc.room_id AND ac.card_number = $2
+		WHERE bc.user_id = $1 AND ac.card_number = $2 AND ac.selected_by_user_id = $1
 	`, userID, cardNumber)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -140,9 +156,10 @@ func (s *SessionStore) MarkNumberOnCard(ctx context.Context, userID int64, cardN
 		return err
 	}
 
+	// Update only the user's bingo_cards.card_data
 	_, err = s.DB.ExecContext(ctx, `
-		UPDATE available_cards SET card_data = $1 
-		WHERE selected_by_user_id = $2 AND card_number = $3
+		UPDATE bingo_cards SET card_data = $1 
+		WHERE user_id = $2 AND room_id = (SELECT room_id FROM available_cards WHERE card_number = $3 AND selected_by_user_id = $2)
 	`, updatedCardData, userID, cardNumber)
 	return err
 }

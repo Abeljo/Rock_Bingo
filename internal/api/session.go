@@ -152,6 +152,77 @@ func AutoDrawNumberHandler(c *fiber.Ctx) error {
 	})
 }
 
+func ForceStartSessionHandler(c *fiber.Ctx) error {
+	roomID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
+	}
+	_, err = sessionStore.StartSession(context.Background(), roomID)
+	if err != nil {
+		log.Printf("[Admin] Error force starting session for room %d: %v", roomID, err)
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
+	}
+	log.Printf("[Admin] Session force started for room %d via API", roomID)
+	return c.SendStatus(http.StatusNoContent)
+}
+
+func GetStuckRoomsHandler(c *fiber.Ctx) error {
+	// Rooms where countdown ended but no active session exists
+	rows, err := sessionStore.DB.Queryx(`
+		SELECT r.id, r.bet_amount, r.status, r.countdown_start, r.game_start_time
+		FROM bingo_rooms r
+		WHERE r.countdown_start IS NOT NULL
+		AND r.game_start_time IS NOT NULL
+		AND r.game_start_time < NOW()
+		AND r.status = 'waiting'
+		AND NOT EXISTS (
+			SELECT 1 FROM game_sessions s WHERE s.room_id = r.id AND s.status = 'active'
+		)
+	`)
+	if err != nil {
+		log.Printf("[Admin] Error fetching stuck rooms: %v", err)
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
+	}
+	var stuckRooms []map[string]interface{}
+	for rows.Next() {
+		m := make(map[string]interface{})
+		if err := rows.MapScan(m); err == nil {
+			stuckRooms = append(stuckRooms, m)
+		}
+	}
+	return c.JSON(stuckRooms)
+}
+
+func RecoverStuckRoomsHandler(c *fiber.Ctx) error {
+	rows, err := sessionStore.DB.Queryx(`
+		SELECT r.id
+		FROM bingo_rooms r
+		WHERE r.countdown_start IS NOT NULL
+		AND r.game_start_time IS NOT NULL
+		AND r.game_start_time < NOW()
+		AND r.status = 'waiting'
+		AND NOT EXISTS (
+			SELECT 1 FROM game_sessions s WHERE s.room_id = r.id AND s.status = 'active'
+		)
+	`)
+	if err != nil {
+		log.Printf("[Admin] Error fetching stuck rooms for recovery: %v", err)
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
+	}
+	var recovered []int64
+	for rows.Next() {
+		var roomID int64
+		if err := rows.Scan(&roomID); err == nil {
+			_, err := sessionStore.StartSession(context.Background(), roomID)
+			if err == nil {
+				log.Printf("[Admin] Recovered stuck room %d by starting session", roomID)
+				recovered = append(recovered, roomID)
+			}
+		}
+	}
+	return c.JSON(fiber.Map{"recovered": recovered})
+}
+
 func RegisterSessionRoutes(router fiber.Router) {
 	router.Post("/sessions", CreateSessionHandler)
 	router.Get("/sessions/:id", GetSessionHandler)
@@ -161,4 +232,7 @@ func RegisterSessionRoutes(router fiber.Router) {
 	router.Post("/sessions/:id/mark", MarkNumberHandler)
 	router.Post("/sessions/:id/bingo", ClaimBingoHandler)
 	router.Get("/sessions/:id/winners", GetWinnersHandler)
+	router.Post("/rooms/:id/force-session", ForceStartSessionHandler)   // Admin tool
+	router.Get("/admin/stuck-rooms", GetStuckRoomsHandler)              // Admin tool
+	router.Post("/admin/recover-stuck-rooms", RecoverStuckRoomsHandler) // Admin tool
 }

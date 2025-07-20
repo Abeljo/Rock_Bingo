@@ -13,6 +13,7 @@ interface CardSelectionProps {
   countdown?: { time_left: number; is_active: boolean };
   onCountdownEnd?: () => void;
   selectedCard?: any;
+  onCardSelectedWithData?: (cardData: any) => void; // NEW PROP
 }
 
 interface AvailableCard {
@@ -24,7 +25,7 @@ interface AvailableCard {
   selected_by_user_id?: number;
 }
 
-export function CardSelection({ roomId, userId, onCardSelected, onBack, disabledCardNumbers = [], countdown, onCountdownEnd, selectedCard }: CardSelectionProps) {
+export function CardSelection({ roomId, userId, onCardSelected, onBack, disabledCardNumbers = [], countdown, onCountdownEnd, selectedCard, onCardSelectedWithData }: CardSelectionProps) {
   const [availableCards, setAvailableCards] = useState<AvailableCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +68,13 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
       await apiService.selectCard(roomId, cardNumber, userId);
       setSelectedCardNumber(cardNumber);
       onCardSelected(cardNumber);
+      // NEW: Fetch full card data and call onCardSelectedWithData
+      if (onCardSelectedWithData) {
+        const cardData = await apiService.getMyCard(roomId, userId);
+        if (cardData) {
+          onCardSelectedWithData(cardData);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to select card');
     } finally {

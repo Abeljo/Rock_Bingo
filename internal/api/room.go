@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"rockbingo/internal/db"
 	"strconv"
@@ -199,6 +200,19 @@ func ForceStartCountdownHandler(c *fiber.Ctx) error {
 	return c.SendStatus(http.StatusNoContent)
 }
 
+func ResetCountdownHandler(c *fiber.Ctx) error {
+	roomID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
+	}
+	err = roomStore.ResetCountdown(context.Background(), roomID)
+	if err != nil {
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
+	}
+	log.Printf("[Admin] Countdown reset for room %d via API", roomID)
+	return c.SendStatus(http.StatusNoContent)
+}
+
 func RegisterRoomRoutes(router fiber.Router) {
 	router.Post("/rooms", CreateRoomHandler)
 	router.Post("/rooms/find-or-create", FindOrCreateRoomHandler)
@@ -213,4 +227,5 @@ func RegisterRoomRoutes(router fiber.Router) {
 	router.Post("/rooms/:id/bet", PlaceBetHandler)
 	// Debug/admin endpoint
 	router.Post("/rooms/:id/force-countdown", ForceStartCountdownHandler)
+	router.Post("/rooms/:id/reset-countdown", ResetCountdownHandler) // Admin tool
 }

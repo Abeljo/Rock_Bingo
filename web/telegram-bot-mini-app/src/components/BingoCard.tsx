@@ -61,7 +61,7 @@ export function BingoCard({ cardData, cardNumber, onNumberClick, disabled = fals
                     <span className="text-xs font-bold mt-1">FREE</span>
                   </span>
                 ) : marked ? (
-                  <Check className="h-5 w-5 text-white animate-bounce" />
+                  <span className="text-white font-bold text-lg">{number}</span>
                 ) : (
                   number
                 )}

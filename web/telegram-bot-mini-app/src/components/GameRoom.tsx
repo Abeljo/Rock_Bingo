@@ -126,30 +126,41 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     // eslint-disable-next-line
   }, [user, room.id]);
 
-  // Poll session, players, and countdown for updates
+  // Robust polling for countdown, session, and players for multiplayer sync
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (session) {
-        setGameTime((prev) => prev + 5);
-        apiService.getSession(session.id).then(setSession).catch(() => {});
-        apiService.getWinners(session.id).then(winners => {
-          if (winners && winners.length > 0) {
-            setWinner(winners.find((w: any) => w.user_id === user?.id) || null);
-          } else {
-            setWinner(null);
+    let polling = true;
+    const poll = async () => {
+      if (!user) return;
+      try {
+        // Poll countdown
+        const countdownData = await apiService.getRoomCountdown(room.id);
+        setCountdown(countdownData);
+        // Poll session
+        const gameSession = await apiService.getRoomSession(room.id);
+        setSession(gameSession);
+        if (gameSession && gameSession.drawn_numbers) {
+          setDrawnNumbers(gameSession.drawn_numbers);
+        }
+        // Poll players
+        const playersData = await apiService.getRoomPlayers(room.id);
+        setPlayers(playersData);
+        // If countdown ended and session is not active, try to start session
+        if (countdownData && countdownData.time_left <= 0 && (!gameSession || gameSession.status !== 'active')) {
+          try {
+            await apiService.createSession(room.id, user.id);
+            // Session will be picked up on next poll
+          } catch (e) {
+            // Ignore error if session already exists
           }
-        }).catch(() => {});
+        }
+      } catch (e) {
+        // Optionally handle polling errors
       }
-      
-      // Always poll countdown and players
-      apiService.getRoomCountdown(room.id).then(data => {
-        setCountdown(data);
-        console.log('[GameRoom] Polled countdown:', data);
-      }).catch(() => {});
-      apiService.getRoomPlayers(room.id).then(setPlayers).catch(() => {});
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [session, room.id, user?.id]);
+      if (polling) setTimeout(poll, 1000);
+    };
+    poll();
+    return () => { polling = false; };
+  }, [room.id, user]);
 
   // Game actions
   // 1. Optimistically update marks after marking a number
@@ -159,25 +170,10 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
       await apiService.markNumber(session.id, selectedCard.card_number, number, user.id);
       setActionMessage('Number marked!');
       setTimeout(() => setActionMessage(null), 1500);
-      // Optimistically update marks
-      setSelectedCard((prev: any) => {
-        if (!prev) return prev;
-        const cardData = typeof prev.card_data === 'string' ? JSON.parse(prev.card_data) : prev.card_data;
-        const newMarks = cardData.marks.map((rowArr: boolean[], rIdx: number) =>
-          rowArr.map((marked: boolean, cIdx: number) =>
-            rIdx === row && cIdx === col ? true : marked
-          )
-        );
-        return {
-          ...prev,
-          card_data: {
-            ...cardData,
-            marks: newMarks,
-            grid: cardData.grid, // ensure grid is preserved
-          },
-        };
-      });
-      // Optionally, reload other game data except card
+      // Fetch the latest card data from backend
+      const updatedCard = await apiService.getMyCard(room.id, user.id);
+      setSelectedCard(updatedCard);
+      // Optionally, reload other game data
       loadGameData();
     } catch (error) {
       setError('Failed to mark number.');
@@ -339,7 +335,15 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
     poll();
   }, [room.id]);
 
-  const handleCardSelected = (cardNumber: number) => {
+  // Handler for when a card is selected
+  const handleCardSelected = async (cardNumber: number) => {
+    // Fetch the full card data and set it for preview
+    if (user) {
+      const cardData = await apiService.getMyCard(room.id, user.id);
+      if (cardData) {
+        setSelectedCard(cardData);
+      }
+    }
     if (countdown && countdown.is_active) {
       loadGameData();
     } else {
@@ -500,13 +504,15 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
   if ((showCardSelection || forceCardSelection) || (!selectedCard && session && session.status === 'active')) {
     return (
       <div>
-        {/* Show countdown timer on card selection screen if countdown is active and game not started */}
-        {countdown && countdown.is_active && (
-          <Countdown
-            timeLeft={countdown.time_left}
-            isActive={countdown.is_active}
-            onGameStart={handleGameStart}
-          />
+        {/* Always show countdown timer at the top of the card selection screen if countdown is present */}
+        {countdown && (
+          <div className="w-full flex justify-center mb-4">
+            <Countdown
+              timeLeft={countdown.time_left}
+              isActive={countdown.is_active}
+              onGameStart={handleGameStart}
+            />
+          </div>
         )}
         {/* If game is in progress and user has no card, show indicator and disable card selection */}
         {session && session.status === 'active' && !selectedCard ? (
@@ -528,6 +534,7 @@ export function GameRoom({ room, onBack }: GameRoomProps) {
               roomId={room.id}
               userId={user?.id || ''}
               onCardSelected={handleCardSelected}
+              onCardSelectedWithData={setSelectedCard} // NEW: pass setter for preview
               onBack={onBack}
               disabledCardNumbers={disabledCardNumbers}
               countdown={countdown}
