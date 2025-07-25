@@ -17,10 +17,6 @@ func InitRoomHandlers(store *db.RoomStore) {
 }
 
 func CreateRoomHandler(c *fiber.Ctx) error {
-	// userID, err := getUserID(c)
-	// if err != nil {
-	// 	return err
-	// }
 	type req struct {
 		BetAmount  float64 `json:"bet_amount"`
 		MaxPlayers int     `json:"max_players"`
@@ -60,13 +56,28 @@ func GetRoomHandler(c *fiber.Ctx) error {
 }
 
 func JoinRoomHandler(c *fiber.Ctx) error {
+	userID, err := getUserID(c)
+	if err != nil {
+		return err
+	}
+
 	roomID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return fiber.NewError(http.StatusBadRequest, "Invalid room ID")
 	}
-	if err := roomStore.JoinRoom(context.Background(), roomID); err != nil {
+
+	err = roomStore.JoinRoom(context.Background(), roomID, userID)
+	if err != nil {
+		// Check error message and return appropriate HTTP status
+		if err.Error() == "room is full" {
+			return fiber.NewError(http.StatusConflict, "Room is full")
+		}
+		if err.Error() == "user already in room" {
+			return fiber.NewError(http.StatusConflict, "User already joined this room")
+		}
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
+
 	return c.SendStatus(http.StatusNoContent)
 }
 
@@ -156,7 +167,7 @@ func PlaceBetHandler(c *fiber.Ctx) error {
 }
 
 func FindOrCreateRoomHandler(c *fiber.Ctx) error {
-	_, err := getUserID(c)
+	userID, err := getUserID(c)
 	if err != nil {
 		return err
 	}
@@ -169,14 +180,20 @@ func FindOrCreateRoomHandler(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest, "Invalid request body")
 	}
 
-	// Find existing room with same bet amount and available space
 	room, err := roomStore.FindOrCreateRoom(context.Background(), body.BetAmount)
 	if err != nil {
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 
-	// Auto-join the room
-	if err := roomStore.JoinRoom(context.Background(), room.ID); err != nil {
+	// Auto-join the user to the room
+	if err := roomStore.JoinRoom(context.Background(), room.ID, userID); err != nil {
+		// Return user-friendly errors for join failure
+		if err.Error() == "room is full" {
+			return fiber.NewError(http.StatusConflict, "Room is full")
+		}
+		if err.Error() == "user already in room" {
+			return fiber.NewError(http.StatusConflict, "User already joined this room")
+		}
 		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 

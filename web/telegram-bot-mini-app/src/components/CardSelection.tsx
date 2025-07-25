@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { apiService } from '../services/api';
-import { Countdown } from './Countdown';
 import { BingoCard } from './BingoCard';
 
 interface CardSelectionProps {
   roomId: string;
-  userId: string;
+  userId: number;
   onCardSelected: (cardNumber: number) => void;
   onBack: () => void;
   disabledCardNumbers?: number[];
@@ -25,7 +24,23 @@ interface AvailableCard {
   selected_by_user_id?: number;
 }
 
-export function CardSelection({ roomId, userId, onCardSelected, onBack, disabledCardNumbers = [], countdown, onCountdownEnd, selectedCard, onCardSelectedWithData }: CardSelectionProps) {
+// Format seconds into mm:ss
+const formatTime = (seconds: number) => {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+export function CardSelection({
+  roomId,
+  onCardSelected,
+  onBack,
+  disabledCardNumbers = [],
+  countdown,
+  onCountdownEnd,
+  selectedCard,
+  onCardSelectedWithData,
+}: CardSelectionProps) {
   const [availableCards, setAvailableCards] = useState<AvailableCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,15 +77,15 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
 
   const handleCardSelect = async (cardNumber: number) => {
     if (selecting) return;
-    
+
     try {
       setSelecting(true);
-      await apiService.selectCard(roomId, cardNumber, userId);
+      await apiService.selectCard(roomId, cardNumber);
       setSelectedCardNumber(cardNumber);
       onCardSelected(cardNumber);
       // NEW: Fetch full card data and call onCardSelectedWithData
       if (onCardSelectedWithData) {
-        const cardData = await apiService.getMyCard(roomId, userId);
+        const cardData = await apiService.getMyCard(roomId);
         if (cardData) {
           onCardSelectedWithData(cardData);
         }
@@ -119,12 +134,17 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
     <div className="min-h-screen bg-gray-100">
       {/* Enhanced prominent countdown at the top */}
       {countdown && countdown.is_active && (
-        <div className="w-full flex flex-col items-center justify-center py-4 bg-gradient-to-r from-blue-100 to-purple-100 border-b-2 border-purple-300 shadow-md mb-4">
+        <div
+          className="w-full flex flex-col items-center justify-center py-4 bg-gradient-to-r from-blue-100 to-purple-100 border-b-2 border-purple-300 shadow-md mb-4"
+          aria-live="assertive"
+          aria-atomic="true"
+          role="timer"
+        >
           <div className="flex items-center gap-4">
-            <span className="text-4xl md:text-5xl font-extrabold text-purple-700 animate-pulse">
-              {countdown.time_left}
+            <span className="text-4xl md:text-5xl font-extrabold text-purple-700 animate-pulse tabular-nums">
+              {formatTime(countdown.time_left)}
             </span>
-            <span className="text-lg md:text-2xl font-semibold text-gray-700">seconds</span>
+            <span className="text-lg md:text-2xl font-semibold text-gray-700">remaining</span>
           </div>
           <div className="text-md md:text-lg text-purple-700 font-bold mt-2 animate-fade-in">
             Game will start soon!
@@ -138,6 +158,7 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
             <button
               onClick={onBack}
               className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+              aria-label="Go back"
             >
               <X className="h-6 w-6" />
             </button>
@@ -154,7 +175,7 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
           </p>
           <div className="text-center">
             <span className="text-sm text-gray-500">
-              Available: {availableCards?.filter(c => !c.is_selected).length || 0} | 
+              Available: {availableCards?.filter(c => !c.is_selected).length || 0} |{' '}
               Selected: {availableCards?.filter(c => c.is_selected).length || 0}
             </span>
           </div>
@@ -165,18 +186,28 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
           {availableCards?.map((card) => (
             <button
               key={card.id}
-              onClick={() => !card.is_selected && !disabledCardNumbers.includes(card.card_number) && !isCardSelectionDisabled && handleCardSelect(card.card_number)}
-              disabled={card.is_selected || selecting || disabledCardNumbers.includes(card.card_number) || isCardSelectionDisabled}
+              onClick={() =>
+                !card.is_selected &&
+                !disabledCardNumbers.includes(card.card_number) &&
+                !isCardSelectionDisabled &&
+                handleCardSelect(card.card_number)
+              }
+              disabled={
+                card.is_selected || selecting || disabledCardNumbers.includes(card.card_number) || isCardSelectionDisabled
+              }
               className={`
                 aspect-square rounded-lg border-2 font-bold text-sm transition-all duration-200
-                ${card.is_selected || disabledCardNumbers.includes(card.card_number)
-                  ? 'bg-green-100 border-green-500 text-green-700'
-                  : isCardSelectionDisabled
+                ${
+                  card.is_selected || disabledCardNumbers.includes(card.card_number)
+                    ? 'bg-green-100 border-green-500 text-green-700'
+                    : isCardSelectionDisabled
                     ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
                     : 'bg-white border-gray-300 hover:border-purple-500 hover:bg-purple-50 text-gray-700'
                 }
                 ${selecting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
               `}
+              aria-pressed={card.is_selected}
+              aria-label={`Bingo card number ${card.card_number}${card.is_selected ? ', selected' : ''}`}
             >
               <div className="flex items-center justify-center h-full">
                 {card.is_selected || disabledCardNumbers.includes(card.card_number) ? (
@@ -194,12 +225,8 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
           <div className="mt-6 text-center">
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <Check className="h-8 w-8 text-green-600 mx-auto mb-2" />
-              <p className="text-green-800 font-semibold">
-                Card #{selectedCardNumber} selected!
-              </p>
-              <p className="text-green-600 text-sm mt-1">
-                You can now play the game with this card.
-              </p>
+              <p className="text-green-800 font-semibold">Card #{selectedCardNumber} selected!</p>
+              <p className="text-green-600 text-sm mt-1">You can now play the game with this card.</p>
             </div>
           </div>
         )}
@@ -208,10 +235,10 @@ export function CardSelection({ roomId, userId, onCardSelected, onBack, disabled
       {selectedCard && selectedCard.card_data && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40">
           <div className="bg-white rounded-lg shadow-lg p-2 border border-purple-200">
-            <BingoCard cardData={selectedCard.card_data} cardNumber={selectedCard.card_number} disabled={true} />
+            <BingoCard cardData={selectedCard.card_data} cardNumber={selectedCard.card_number ?? Number(selectedCard.id)} disabled={true} />
           </div>
         </div>
       )}
     </div>
   );
-} 
+}

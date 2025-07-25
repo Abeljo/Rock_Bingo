@@ -6,39 +6,49 @@ import (
 	"time"
 )
 
+// Seed rand once globally
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 // Card represents a Bingo card with its grid and marked numbers.
 type Card struct {
 	Grid  [5][5]int  `json:"grid"`
 	Marks [5][5]bool `json:"marks"`
 }
 
-// NewCard creates a 5x5 Bingo card with 25 random numbers from 1-100 and center cell auto-marked.
+// NewCard creates a 5x5 Bingo card with numbers from traditional Bingo ranges per column
+// and center cell marked as free space (0).
 func NewCard() *Card {
-	rand.Seed(time.Now().UnixNano())
 	card := &Card{}
 
-	// Generate 25 unique random numbers from 1-100
-	numbers := rand.Perm(100)
-	for i := 0; i < 25; i++ {
-		numbers[i] = numbers[i] + 1 // Convert 0-99 to 1-100
+	// Define number ranges per column
+	ranges := [5][2]int{
+		{1, 15},  // B
+		{16, 30}, // I
+		{31, 45}, // N
+		{46, 60}, // G
+		{61, 75}, // O
 	}
 
-	// Fill the 5x5 grid with the 25 numbers
-	index := 0
-	for i := 0; i < 5; i++ {
-		for j := 0; j < 5; j++ {
-			card.Grid[i][j] = numbers[index]
-			index++
+	for col := 0; col < 5; col++ {
+		// Generate 5 unique numbers within the column range
+		numRange := ranges[col][1] - ranges[col][0] + 1
+		nums := rand.Perm(numRange)[:5] // first 5 unique numbers from range size
+
+		for row := 0; row < 5; row++ {
+			card.Grid[row][col] = nums[row] + ranges[col][0] // shift by start of range
 		}
 	}
 
-	// Mark the center cell as a free space
+	// Center cell (2,2) is free space: number = 0 and marked
+	card.Grid[2][2] = 0
 	card.Marks[2][2] = true
 
 	return card
 }
 
-// BingoHeaders returns the BINGO column headers
+// BingoHeaders returns the BINGO column headers.
 func BingoHeaders() [5]string {
 	return [5]string{"B", "I", "N", "G", "O"}
 }
@@ -60,11 +70,10 @@ func (c *Card) ToJSON() ([]byte, error) {
 	return json.Marshal(c)
 }
 
-// GenerateCallouts creates a shuffled list of numbers from 1 to 100.
+// GenerateCallouts creates a shuffled list of numbers from 1 to 75.
 func GenerateCallouts() []int {
-	rand.Seed(time.Now().UnixNano())
-	nums := make([]int, 100)
-	for i := 0; i < 100; i++ {
+	nums := make([]int, 75)
+	for i := 0; i < 75; i++ {
 		nums[i] = i + 1
 	}
 	rand.Shuffle(len(nums), func(i, j int) {
@@ -75,14 +84,26 @@ func GenerateCallouts() []int {
 
 // GenerateAvailableCards creates 100 unique bingo cards for a room.
 func GenerateAvailableCards() []*Card {
-	cards := make([]*Card, 100)
-	for i := 0; i < 100; i++ {
-		cards[i] = NewCard()
+	cards := make([]*Card, 0, 100)
+	cardSet := make(map[string]bool)
+
+	for len(cards) < 100 {
+		card := NewCard()
+		jsonBytes, err := card.ToJSON()
+		if err != nil {
+			continue // skip invalid cards, rare but safe
+		}
+		key := string(jsonBytes)
+		if !cardSet[key] {
+			cardSet[key] = true
+			cards = append(cards, card)
+		}
 	}
+
 	return cards
 }
 
-// HasWinningPattern checks if the card has a winning bingo pattern
+// HasWinningPattern checks if the card has a winning bingo pattern.
 func (c *Card) HasWinningPattern() bool {
 	// Check rows
 	for i := 0; i < 5; i++ {
@@ -139,7 +160,7 @@ func (c *Card) HasWinningPattern() bool {
 	return false
 }
 
-// ValidateBongo validates the card against the drawn numbers.
+// ValidateBingo validates the card against the drawn numbers.
 func (c *Card) ValidateBingo(drawnNumbers []int) bool {
 	// Create a map of drawn numbers for quick lookup
 	drawnMap := make(map[int]bool)
@@ -151,7 +172,8 @@ func (c *Card) ValidateBingo(drawnNumbers []int) bool {
 	for i := 0; i < 5; i++ {
 		for j := 0; j < 5; j++ {
 			if c.Marks[i][j] {
-				if !drawnMap[c.Grid[i][j]] {
+				// Ignore center free space cell with 0
+				if c.Grid[i][j] != 0 && !drawnMap[c.Grid[i][j]] {
 					return false // Marked number was not drawn
 				}
 			}

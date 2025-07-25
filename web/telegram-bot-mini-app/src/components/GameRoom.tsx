@@ -3,29 +3,69 @@ import { Trophy, Users, Timer, Sparkles, ArrowLeft, Play, Check, X } from 'lucid
 import { BingoCard } from './BingoCard';
 import { CardSelection } from './CardSelection';
 import { Countdown } from './Countdown';
-import { Room, GameSession, Player, User } from '../types';
+import { Room, GameSession, Player, User, BingoCard as BingoCardType } from '../types';
 import { apiService } from '../services/api';
 import { useTelegram } from '../hooks/useTelegram';
+import { GameRoomHeader } from './GameRoom/GameRoomHeader';
+import { GameRoomStatusBanner } from './GameRoom/GameRoomStatusBanner';
+import { GameRoomModals } from './GameRoom/GameRoomModals';
+import { GameRoomDrawnNumbers } from './GameRoom/GameRoomDrawnNumbers';
+import { GameRoomPlayerList } from './GameRoom/GameRoomPlayerList';
+import { GameRoomPrizePool } from './GameRoom/GameRoomPrizePool';
+import { GameRoomControls } from './GameRoom/GameRoomControls';
+import { GameRoomCardSection } from './GameRoom/GameRoomCardSection';
+import { GameRoomCardSelectionWrapper } from './GameRoom/GameRoomCardSelectionWrapper';
 
-// Add confetti effect for win
-function ConfettiCelebration({ show }: { show: boolean }) {
-  if (!show) return null;
-  // Simple emoji confetti fallback
-  return (
-    <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center animate-fade-in">
-      <div className="text-6xl select-none" aria-hidden="true" style={{ pointerEvents: 'none' }}>
-        🎉🎊✨🎉🎊✨
-      </div>
-    </div>
-  );
+// Types for state and actions
+interface GameRoomState {
+  user: User | null;
+  selectedCard: BingoCardType | null;
+  session: GameSession | null;
+  players: Player[];
+  loading: boolean;
+  error: string | null;
+  gameTime: number;
+  winner: any;
+  actionMessage: string | null;
+  showCardSelection: boolean;
+  drawnNumbers: number[];
+  countdown: any;
+  uncalledModalOpen: boolean;
+  uncalledModalMsg: string;
+  showCongratsModal: boolean;
+  winningAmount: number | null;
+  disabledCardNumbers: number[];
+  forceCardSelection: boolean;
+  showGameOverModal: boolean;
 }
 
-const initialState = {
+type GameRoomAction =
+  | { type: 'SET_USER'; payload: User | null }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_GAME_DATA'; payload: Partial<GameRoomState> }
+  | { type: 'SET_ACTION_MESSAGE'; payload: string | null }
+  | { type: 'SET_SHOW_CARD_SELECTION'; payload: boolean }
+  | { type: 'SET_SELECTED_CARD'; payload: BingoCardType | null }
+  | { type: 'SET_SESSION'; payload: GameSession | null }
+  | { type: 'SET_DRAWN_NUMBERS'; payload: number[] }
+  | { type: 'SET_COUNTDOWN'; payload: any }
+  | { type: 'SET_WINNER'; payload: any }
+  | { type: 'SHOW_UNSUPPORTED_BINGO_CLAIM'; payload: string }
+  | { type: 'HIDE_UNSUPPORTED_BINGO_CLAIM' }
+  | { type: 'SHOW_CONGRATS_MODAL'; payload: number | null }
+  | { type: 'HIDE_CONGRATS_MODAL' }
+  | { type: 'SHOW_GAME_OVER_MODAL' }
+  | { type: 'HIDE_GAME_OVER_MODAL' }
+  | { type: 'RESET_GAME' };
+
+// Initial state definition
+const initialState: GameRoomState = {
   user: null,
   selectedCard: null,
   session: null,
   players: [],
-  loading: true,
+  loading: false,
   error: null,
   gameTime: 0,
   winner: null,
@@ -42,7 +82,8 @@ const initialState = {
   showGameOverModal: false,
 };
 
-function gameRoomReducer(state, action) {
+// Reducer for state management
+function gameRoomReducer(state: GameRoomState, action: GameRoomAction): GameRoomState {
   switch (action.type) {
     case 'SET_USER':
       return { ...state, user: action.payload };
@@ -57,37 +98,43 @@ function gameRoomReducer(state, action) {
     case 'SET_SHOW_CARD_SELECTION':
       return { ...state, showCardSelection: action.payload };
     case 'SET_SELECTED_CARD':
-        return { ...state, selectedCard: action.payload };
+      return { ...state, selectedCard: action.payload };
     case 'SET_SESSION':
-        return { ...state, session: action.payload };
+      return { ...state, session: action.payload };
     case 'SET_DRAWN_NUMBERS':
-        return { ...state, drawnNumbers: action.payload };
+      return { ...state, drawnNumbers: action.payload };
     case 'SET_COUNTDOWN':
-        return { ...state, countdown: action.payload };
+      return { ...state, countdown: action.payload };
     case 'SET_WINNER':
-        return { ...state, winner: action.payload };
+      return { ...state, winner: action.payload };
     case 'SHOW_UNSUPPORTED_BINGO_CLAIM':
-        return { ...state, uncalledModalOpen: true, uncalledModalMsg: action.payload };
+      return { ...state, uncalledModalOpen: true, uncalledModalMsg: action.payload };
     case 'HIDE_UNSUPPORTED_BINGO_CLAIM':
-        return { ...state, uncalledModalOpen: false, uncalledModalMsg: '' };
+      return { ...state, uncalledModalOpen: false, uncalledModalMsg: '' };
     case 'SHOW_CONGRATS_MODAL':
-        return { ...state, showCongratsModal: true, winningAmount: action.payload };
+      return { ...state, showCongratsModal: true, winningAmount: action.payload };
     case 'HIDE_CONGRATS_MODAL':
-        return { ...state, showCongratsModal: false };
+      return { ...state, showCongratsModal: false };
     case 'SHOW_GAME_OVER_MODAL':
-        return { ...state, showGameOverModal: true };
+      return { ...state, showGameOverModal: true };
     case 'HIDE_GAME_OVER_MODAL':
-        return { ...state, showGameOverModal: false };
+      return { ...state, showGameOverModal: false };
     case 'RESET_GAME':
-        return { ...initialState, user: state.user };
+      return { ...initialState, user: state.user };
     default:
       return state;
   }
 }
 
-export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
+interface GameRoomProps {
+  room: Room;
+  onBack: () => void;
+}
+
+export function GameRoom({ room, onBack }: GameRoomProps) {
   const { user: telegramUser } = useTelegram();
   const [state, dispatch] = useReducer(gameRoomReducer, initialState);
+
   const {
     user,
     selectedCard,
@@ -110,144 +157,132 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
     showGameOverModal,
   } = state;
 
-  // Authenticate and set user
+  // Authenticate user on telegramUser change
   useEffect(() => {
-    if (telegramUser) {
-      apiService.authenticateTelegram({
-        telegram_id: telegramUser.id,
-        username: telegramUser.username,
-        first_name: telegramUser.first_name,
-        last_name: telegramUser.last_name,
-      }).then(user => {
-          dispatch({ type: 'SET_USER', payload: user });
-          apiService.setAuthUser(user);
-        }).catch(() => dispatch({ type: 'SET_USER', payload: null }));
-    }
+    if (!telegramUser) return;
+    apiService.authenticateTelegram({
+      telegram_id: telegramUser.id,
+      username: telegramUser.username,
+      first_name: telegramUser.first_name,
+      last_name: telegramUser.last_name,
+    }).then((user: User) => {
+      dispatch({ type: 'SET_USER', payload: user });
+      apiService.setAuthUser(user);
+    }).catch(() => dispatch({ type: 'SET_USER', payload: null }));
   }, [telegramUser]);
 
-  // Main game data loader
+  // Load game data
   const loadGameData = useCallback(async () => {
     if (!user) return;
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
     try {
-      // 1. Join the room
       await apiService.joinRoom(room.id);
 
-      // 2. Check if user has selected a card
       const myCard = await apiService.getMyCard(room.id);
       if (myCard) {
         dispatch({ type: 'SET_SELECTED_CARD', payload: myCard });
       } else {
-        // No card selected yet, show card selection
         dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: true });
         dispatch({ type: 'SET_LOADING', payload: false });
         return;
       }
 
-      // 3. Get or create session for the room
-      let gameSession = await apiService.getRoomSession(room.id);
-      if (gameSession && gameSession.drawn_numbers) {
+      const gameSession = await apiService.getRoomSession(room.id);
+      if (gameSession?.drawn_numbers) {
         dispatch({ type: 'SET_DRAWN_NUMBERS', payload: gameSession.drawn_numbers });
       }
       dispatch({ type: 'SET_SESSION', payload: gameSession });
 
-      // 4. Get players
       const playersData = await apiService.getRoomPlayers(room.id);
       dispatch({ type: 'SET_GAME_DATA', payload: { players: playersData } });
 
-      // 5. Get countdown information
       try {
         const countdownData = await apiService.getRoomCountdown(room.id);
         dispatch({ type: 'SET_COUNTDOWN', payload: countdownData });
-      } catch (err) {
-        console.log('Countdown error:', err);
+      } catch {
         dispatch({ type: 'SET_COUNTDOWN', payload: null });
       }
 
-      // 6. Get winners if session exists
       if (gameSession) {
         const winners = await apiService.getWinners(gameSession.id);
-        if (winners && winners.length > 0) {
-            dispatch({ type: 'SET_WINNER', payload: winners.find((w: any) => w.user_id === user.id) || null });
-        } else {
-            dispatch({ type: 'SET_WINNER', payload: null });
-        }
+        dispatch({ type: 'SET_WINNER', payload: winners?.find((w: any) => w.user_id === user.id) ?? null });
       } else {
         dispatch({ type: 'SET_WINNER', payload: null });
       }
-    } catch (err: any) {
-        dispatch({ type: 'SET_ERROR', payload: 'Failed to load game data: ' + (err.message || err) });
+    } catch (err) {
+      let msg = 'Failed to load game data';
+      if (err && typeof err === 'object' && err !== null && 'message' in err) {
+        msg += ': ' + (err as any).message;
+      }
+      dispatch({ type: 'SET_ERROR', payload: msg });
     } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, [room.id, user]);
 
-  // Initial load
   useEffect(() => {
     loadGameData();
-    // eslint-disable-next-line
-  }, [user, room.id]);
+  }, [loadGameData]);
 
-  // Robust polling for countdown, session, and players for multiplayer sync
+  // Poll for countdown, session, players
   useEffect(() => {
+    if (!user) return;
     let polling = true;
+
     const poll = async () => {
-      if (!user) return;
       try {
-        // Poll countdown
         const countdownData = await apiService.getRoomCountdown(room.id);
         dispatch({ type: 'SET_COUNTDOWN', payload: countdownData });
-        // Poll session
+
         const gameSession = await apiService.getRoomSession(room.id);
-        console.log('Polled session:', gameSession); // <-- LOGGING
         dispatch({ type: 'SET_SESSION', payload: gameSession });
-        if (gameSession && gameSession.drawn_numbers) {
-            dispatch({ type: 'SET_DRAWN_NUMBERS', payload: gameSession.drawn_numbers });
+        if (gameSession?.drawn_numbers) {
+          dispatch({ type: 'SET_DRAWN_NUMBERS', payload: gameSession.drawn_numbers });
         }
-        // Poll players
+
         const playersData = await apiService.getRoomPlayers(room.id);
         dispatch({ type: 'SET_GAME_DATA', payload: { players: playersData } });
-        // If countdown ended and session is not active, try to start session
-        if (countdownData && countdownData.time_left <= 0 && (!gameSession || gameSession.status !== 'active')) {
+
+        if (countdownData?.time_left <= 0 && (!gameSession || gameSession.status !== 'active')) {
           try {
             await apiService.createSession(room.id);
-            // Immediately fetch and set the session after creation
             const newSession = await apiService.getRoomSession(room.id);
-            console.log('Fetched session after creation:', newSession);
             dispatch({ type: 'SET_SESSION', payload: newSession });
-            if (newSession && newSession.drawn_numbers) {
+            if (newSession?.drawn_numbers) {
               dispatch({ type: 'SET_DRAWN_NUMBERS', payload: newSession.drawn_numbers });
             }
-          } catch (e) {
-            // Ignore error if session already exists
+          } catch {
+            // ignore if session exists
           }
         }
-      } catch (e) {
-        // Optionally handle polling errors
+      } catch {
+        // optionally handle poll errors
       }
+
       if (polling) setTimeout(poll, 1000);
     };
+
     poll();
     return () => { polling = false; };
   }, [room.id, user]);
 
-  // Game actions
-  // 1. Optimistically update marks after marking a number
-  const handleMarkNumber = async (row: number, col: number, number: number) => {
+  // Handlers: mark number, draw number, claim bingo
+  const handleMarkNumber = (number: number) => {
     if (!session || !selectedCard || !user) return;
-    try {
-      await apiService.markNumber(session.id, selectedCard.card_number, number);
-      dispatch({ type: 'SET_ACTION_MESSAGE', payload: 'Number marked!' });
-      setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 1500);
-      // Fetch the latest card data from backend
-      const updatedCard = await apiService.getMyCard(room.id);
-      dispatch({ type: 'SET_SELECTED_CARD', payload: updatedCard });
-      // Optionally, reload other game data
-      loadGameData();
-    } catch (error) {
+    apiService.markNumber(session.id, Number(selectedCard.id), number)
+      .then(() => {
+        dispatch({ type: 'SET_ACTION_MESSAGE', payload: 'Number marked!' });
+        setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 1500);
+        return apiService.getMyCard(room.id);
+      })
+      .then((updatedCard: BingoCardType) => {
+        if (updatedCard) dispatch({ type: 'SET_SELECTED_CARD', payload: updatedCard });
+        loadGameData();
+      })
+      .catch(() => {
         dispatch({ type: 'SET_ERROR', payload: 'Failed to mark number.' });
-    }
+      });
   };
 
   const handleDrawNumber = async () => {
@@ -258,25 +293,26 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
       dispatch({ type: 'SET_ACTION_MESSAGE', payload: `Number ${result.number} drawn!` });
       setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 1500);
       loadGameData();
-    } catch (error) {
-        dispatch({ type: 'SET_ERROR', payload: 'Failed to draw number.' });
+    } catch {
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to draw number.' });
     }
   };
 
   const handleClaimBingo = async () => {
     if (!session || !selectedCard || !user) return;
-
     try {
-      await apiService.claimBingo(session.id, selectedCard.card_number);
+      await apiService.claimBingo(session.id, Number(selectedCard.id));
       dispatch({ type: 'SET_ACTION_MESSAGE', payload: 'Bingo claimed! Waiting for validation...' });
       setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 2000);
       loadGameData();
-    } catch (error: any) {
-      if (error.message && error.message.includes('winning bingo pattern')) {
-        dispatch({ type: 'SET_ERROR', payload: 'No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!' });
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: 'Failed to claim bingo.' });
+    } catch (error) {
+      let msg = 'Failed to claim bingo.';
+      if (error && typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string') {
+        if ((error as any).message.includes('winning bingo pattern')) {
+          msg = 'No winning pattern found. You need a complete row, column, or diagonal to claim Bingo!';
+        }
       }
+      dispatch({ type: 'SET_ERROR', payload: msg });
     }
   };
 
@@ -288,93 +324,68 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
       dispatch({ type: 'SET_ACTION_MESSAGE', payload: 'Game started!' });
       setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 1500);
       loadGameData();
-    } catch (error) {
-      console.error('Failed to start game:', error);
+    } catch {
       dispatch({ type: 'SET_ERROR', payload: 'Failed to start game.' });
     }
   };
 
-  // 2. After card selection, poll for countdown activation
+  // Poll countdown after card selection
   const pollCountdownAfterCardSelect = useCallback(() => {
     let attempts = 0;
-    const maxAttempts = 10; // poll for up to 5 seconds
+    const maxAttempts = 10; // ~5 seconds
     const poll = async () => {
       attempts++;
       const countdownData = await apiService.getRoomCountdown(room.id);
       dispatch({ type: 'SET_COUNTDOWN', payload: countdownData });
-      if (countdownData && countdownData.is_active) {
-        // Countdown is now active
-        return;
-      }
-      if (attempts < maxAttempts) {
-        setTimeout(poll, 500);
-      }
+      if (countdownData?.is_active) return;
+      if (attempts < maxAttempts) setTimeout(poll, 500);
     };
     poll();
   }, [room.id]);
 
-  // Handler for when a card is selected
+  // When a card is selected
   const handleCardSelected = async (cardNumber: number) => {
-    // Fetch the full card data and set it for preview
     if (user) {
       const cardData = await apiService.getMyCard(room.id);
-      if (cardData) {
-        dispatch({ type: 'SET_SELECTED_CARD', payload: cardData });
-      }
+      if (cardData) dispatch({ type: 'SET_SELECTED_CARD', payload: cardData });
     }
-    if (countdown && countdown.is_active) {
+    if (countdown?.is_active) {
       loadGameData();
     } else {
       dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false });
       loadGameData();
-      pollCountdownAfterCardSelect(); // start polling for countdown
+      pollCountdownAfterCardSelect();
     }
   };
 
-  // Effect: when countdown ends and game becomes active, hide card selection
+  // Hide card selection when session active
   useEffect(() => {
-    if ((showCardSelection || forceCardSelection) && session && session.status === 'active') {
-        dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false });
+    if ((showCardSelection || forceCardSelection) && session?.status === 'active') {
+      dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false });
     }
   }, [session, showCardSelection, forceCardSelection]);
 
-  const handleGameStart = () => {
-    // When countdown reaches zero, automatically start the game
-    if (!session) {
-      handleStartGame();
-    }
-  };
-
-  // Auto-draw numbers when game is active
+  // Auto-draw numbers every 5 seconds during active game
   useEffect(() => {
-    if (!session || session.status !== 'active') {
-      return;
-    }
+    if (!session || session.status !== 'active') return;
 
-    const autoDrawInterval = setInterval(async () => {
+    const interval = setInterval(async () => {
       try {
         const result = await apiService.autoDrawNumber(session.id);
         dispatch({ type: 'SET_DRAWN_NUMBERS', payload: [...drawnNumbers, result.number] });
         dispatch({ type: 'SET_ACTION_MESSAGE', payload: `Number ${result.number} called automatically!` });
         setTimeout(() => dispatch({ type: 'SET_ACTION_MESSAGE', payload: null }), 2000);
-      } catch (error) {
-        console.error('Auto-draw failed:', error);
+      } catch {
+        // ignore errors
       }
-    }, 5000); // Draw a number every 5 seconds
+    }, 5000);
 
-    return () => {
-      clearInterval(autoDrawInterval);
-    };
+    return () => clearInterval(interval);
   }, [session?.id, session?.status, drawnNumbers]);
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   // Determine game phase
-  let gamePhase: 'waiting' | 'countdown' | 'ready' | 'active' | 'finished' = 'waiting';
+  type GamePhase = 'waiting' | 'finished' | 'active' | 'ready' | 'countdown';
+  let gamePhase: GamePhase = 'waiting';
   if (session) {
     if (session.status === 'completed') gamePhase = 'finished';
     else if (session.status === 'active') gamePhase = 'active';
@@ -383,11 +394,10 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
     gamePhase = 'countdown';
   }
 
-  // Show congrats modal and handle navigation after win
+  // Congratulation modal and game over modal logic
   useEffect(() => {
     if (gamePhase === 'finished' && winner) {
-        dispatch({ type: 'SHOW_CONGRATS_MODAL', payload: (winner as any)?.winnings || null });
-      // Auto-close modal, reset state, and return to lobby after 2 seconds
+      dispatch({ type: 'SHOW_CONGRATS_MODAL', payload: winner?.winnings ?? null });
       const timeout = setTimeout(() => {
         dispatch({ type: 'HIDE_CONGRATS_MODAL' });
         dispatch({ type: 'RESET_GAME' });
@@ -396,11 +406,11 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
       return () => clearTimeout(timeout);
     }
     if (gamePhase === 'finished' && !winner) {
-        dispatch({ type: 'SHOW_GAME_OVER_MODAL' });
+      dispatch({ type: 'SHOW_GAME_OVER_MODAL' });
     }
   }, [gamePhase, winner, onBack]);
 
-  // Optionally, play a sound on win
+  // Play sound on congrats modal show
   useEffect(() => {
     if (showCongratsModal) {
       const audio = new Audio('https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa4c8b.mp3');
@@ -408,71 +418,69 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
     }
   }, [showCongratsModal]);
 
-  // Handler for Select Another Card
+  // Select another card handler
   const handleSelectAnotherCard = () => {
     dispatch({ type: 'HIDE_CONGRATS_MODAL' });
     if (selectedCard) {
-        dispatch({ type: 'SET_GAME_DATA', payload: { disabledCardNumbers: [...disabledCardNumbers, selectedCard.card_number] } });
+      dispatch({ type: 'SET_GAME_DATA', payload: { disabledCardNumbers: [...disabledCardNumbers, Number(selectedCard.id)] } });
     }
-    dispatch({ type: 'SET_SELECTED_CARD', payload: null }); // Clear selected card so CardSelection is shown
+    dispatch({ type: 'SET_SELECTED_CARD', payload: null });
     dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: true });
   };
 
-  // Handler for Leave Room
+  // Leave room handler
   const handleLeaveRoom = () => {
     dispatch({ type: 'HIDE_CONGRATS_MODAL' });
-    if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
+    if (window.Telegram?.WebApp?.close) {
       window.Telegram.WebApp.close();
     } else {
-      // fallback: reload or navigate away
       window.location.href = 'about:blank';
     }
   };
 
-  // Add a leave room handler
+  // Leave room button handler (calls API and then closes or navigates)
   const handleLeaveRoomButton = async () => {
     if (!room || !user) return;
     try {
       await apiService.leaveRoom(room.id);
-      if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
+      if (window.Telegram?.WebApp?.close) {
         window.Telegram.WebApp.close();
       } else {
         onBack();
       }
-    } catch (e) {
-        dispatch({ type: 'SET_ERROR', payload: 'Failed to leave room.' });
+    } catch {
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to leave room.' });
     }
   };
 
-  // If all cards are selected, refresh and move to a new room
+  // If all cards disabled (>= 99), reload (maybe consider better logic here)
   useEffect(() => {
     if (showCardSelection && selectedCard && disabledCardNumbers.length >= 99) {
-      // All cards selected, refresh or move to a new room
-      window.location.reload(); // or trigger a new room join logic
+      window.location.reload();
     }
   }, [showCardSelection, disabledCardNumbers, selectedCard]);
 
-  // Add a helper to get the latest called number
+  // Safety for arrays and variables
   const safeDrawnNumbers = Array.isArray(drawnNumbers) ? drawnNumbers : [];
   const safePlayers = Array.isArray(players) ? players : [];
   const latestNumber = safeDrawnNumbers.length > 0 ? safeDrawnNumbers[safeDrawnNumbers.length - 1] : null;
   const prizePool = (safePlayers.length * (room.bet_amount || 0)).toFixed(2);
 
-  if ((showCardSelection || forceCardSelection) || (!selectedCard && session && session.status === 'active')) {
+  // Render UI
+
+  // Show card selection or "game in progress with no card" screen if needed
+  if ((showCardSelection || forceCardSelection) || (!selectedCard && session?.status === 'active')) {
     return (
       <div>
-        {/* Always show countdown timer at the top of the card selection screen if countdown is present */}
+        {/* Countdown at top */}
         {countdown && (
           <div className="w-full flex justify-center mb-4">
-            <Countdown
-              timeLeft={countdown.time_left}
-              isActive={countdown.is_active}
-              onGameStart={handleGameStart}
-            />
+            <Countdown timeLeft={countdown.time_left} isActive={countdown.is_active} onGameStart={handleStartGame} />
           </div>
         )}
-        {/* If game is in progress and user has no card, show indicator and disable card selection */}
-        {session && session.status === 'active' && !selectedCard ? (
+
+        {/* Game in progress but user no card */}
+        {session?.status === 'active' && !selectedCard ? (
           <div className="flex flex-col items-center justify-center min-h-[60vh]">
             <div className="text-center">
               <div className="text-yellow-500 mb-4">
@@ -485,20 +493,17 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
             </div>
           </div>
         ) : (
-          <>
-            <CardSelection
-              roomId={room.id}
-              onCardSelected={handleCardSelected}
-              onCardSelectedWithData={(card) => dispatch({ type: 'SET_SELECTED_CARD', payload: card })} // NEW: pass setter for preview
-              onBack={onBack}
-              disabledCardNumbers={disabledCardNumbers}
-              countdown={countdown}
-              selectedCard={selectedCard}
-              onCountdownEnd={() => {
-                dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false });
-              }}
-            />
-          </>
+          <CardSelection
+            roomId={room.id}
+            onCardSelected={handleCardSelected}
+            onCardSelectedWithData={(card: BingoCardType) => dispatch({ type: 'SET_SELECTED_CARD', payload: card })}
+            onBack={onBack}
+            disabledCardNumbers={disabledCardNumbers}
+            countdown={countdown}
+            selectedCard={selectedCard}
+            onCountdownEnd={() => dispatch({ type: 'SET_SHOW_CARD_SELECTION', payload: false })}
+            userId={user?.id ? user.id.toString() : ''}
+          />
         )}
       </div>
     );
@@ -511,20 +516,26 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
       </div>
     );
   }
+
   if (error) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
         <div className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center animate-fade-in">
           <div className="text-red-500 mb-4">
             <svg className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+              />
             </svg>
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Game Room Error</h2>
           <p className="text-gray-600 mb-6">{error}</p>
           <button
             onClick={() => {
-                dispatch({ type: 'SET_ERROR', payload: null });
+              dispatch({ type: 'SET_ERROR', payload: null });
               onBack();
             }}
             className="bg-purple-500 hover:bg-purple-600 text-white px-6 py-2 rounded-lg transition-colors"
@@ -536,276 +547,68 @@ export function GameRoom({ room, onBack }: { room: Room; onBack: () => void }) {
     );
   }
 
+  // Main game room UI
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Uncalled Numbers Toast */}
-      {uncalledModalOpen && (
-        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg shadow-xl px-6 py-3 max-w-xs w-full text-center border border-red-200 animate-fade-in">
-            <div className="text-red-600 font-semibold mb-1 flex items-center justify-center">
-              <X className="h-5 w-5 mr-2" />
-              {uncalledModalMsg}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Congrats Modal */}
-      {showCongratsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center animate-fade-in">
-            <Sparkles className="h-12 w-12 text-yellow-500 mx-auto mb-4 animate-bounce" />
-            <h2 className="text-2xl font-bold text-green-700 mb-2">Congratulations!</h2>
-            <p className="text-lg text-gray-800 mb-2">You won the game!</p>
-            {winningAmount !== null && (
-              <p className="text-xl font-bold text-purple-700 mb-4">+{winningAmount.toFixed(2)} ETB</p>
-            )}
-            <div className="flex flex-col gap-3 mt-4">
-              <button
-                onClick={handleSelectAnotherCard}
-                className="w-full px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
-              >
-                Select Another Card
-              </button>
-              <button
-                onClick={handleLeaveRoom}
-                className="w-full px-6 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold shadow hover:bg-gray-300 transition-all duration-200"
-              >
-                Leave Room
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Game Over Modal */}
-      {showGameOverModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center animate-fade-in">
-            <X className="h-12 w-12 text-gray-400 mx-auto mb-4 animate-bounce" />
-            <h2 className="text-2xl font-bold text-gray-700 mb-2">Game Over</h2>
-            <p className="text-lg text-gray-800 mb-4">Better luck next time!</p>
-            <button
-              onClick={() => {
-                dispatch({ type: 'SHOW_GAME_OVER_MODAL', payload: false });
-                onBack();
-              }}
-              className="w-full px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
-            >
-              Return to Lobby
-            </button>
-          </div>
-        </div>
-      )}
-      {/* Countdown Component */}
-      {countdown && (
-        <>
-          <Countdown
-            timeLeft={countdown.time_left}
-            isActive={countdown.is_active}
-            onGameStart={handleGameStart}
-          />
-        </>
-      )}
-      
-      {/* Animated Countdown Overlay */}
-      {gamePhase === 'countdown' && countdown && countdown.is_active && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl px-12 py-10 text-center flex flex-col items-center">
-            <div className="text-5xl font-extrabold text-purple-700 mb-4 animate-bounce">
-              {countdown.time_left}
-            </div>
-            <div className="text-xl font-semibold text-gray-800 mb-2">Game starting soon!</div>
-            <div className="text-gray-500">Get ready to play Bingo!</div>
-          </div>
-        </div>
-      )}
-
-      {/* Confetti Celebration */}
-      <ConfettiCelebration show={showCongratsModal} />
-
-      <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
-        <button onClick={onBack} className="p-2 rounded-full hover:bg-gray-200">
-          <ArrowLeft className="h-6 w-6" />
-        </button>
-        <h1 className="text-2xl font-bold">{`Room #${room.id}`}</h1>
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-1">
-            <Users className="h-5 w-5" />
-            <span>{safePlayers.length}</span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <Trophy className="h-5 w-5" />
-            <span>{room.bet_amount} ETB</span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <Timer className="h-5 w-5" />
-            <span>{formatTime(gameTime)}</span>
-          </div>
-          {/* Leave Room Button */}
-          <button
-            onClick={handleLeaveRoomButton}
-            className="ml-4 px-4 py-2 bg-red-500 text-white rounded-lg font-bold shadow hover:bg-red-600 transition-all duration-200"
-          >
-            Leave Room
-          </button>
-        </div>
-      </div>
-
-      {/* Player List and Prize Pool */}
+      <GameRoomModals
+        uncalledModalOpen={uncalledModalOpen}
+        uncalledModalMsg={uncalledModalMsg}
+        showCongratsModal={showCongratsModal}
+        winningAmount={winningAmount}
+        handleSelectAnotherCard={handleSelectAnotherCard}
+        handleLeaveRoom={handleLeaveRoom}
+        showGameOverModal={showGameOverModal}
+        setShowGameOverModal={(val: boolean) => dispatch({ type: val ? 'SHOW_GAME_OVER_MODAL' : 'HIDE_GAME_OVER_MODAL' })}
+        onBack={onBack}
+      />
+      <GameRoomHeader
+        room={room}
+        user={user}
+        players={players}
+        gameTime={gameTime}
+        onBack={onBack}
+        handleLeaveRoomButton={handleLeaveRoomButton}
+      />
       <div className="max-w-4xl mx-auto px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-2">
         <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-purple-500" />
-          <span className="font-semibold text-gray-700">Players:</span>
-          <div className="flex flex-wrap gap-1">
-            {safePlayers.map(player => (
-              <span
-                key={player.id}
-                className={`px-2 py-1 rounded text-xs font-bold ${player.id === user?.id ? 'bg-purple-500 text-white' : 'bg-gray-200 text-gray-700'}`}
-              >
-                {player.first_name}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Trophy className="h-5 w-5 text-yellow-500" />
-          <span className="font-semibold text-gray-700">Prize Pool:</span>
-          <span className="text-lg font-bold text-purple-700">{prizePool} ETB</span>
+          <GameRoomPrizePool players={players} room={room} />
         </div>
       </div>
-
-      {/* Move actionMessage above the card, reserve space to prevent shifting */}
       <main className="max-w-4xl mx-auto p-4">
-        <div style={{ minHeight: '32px' }}>
-          {actionMessage && (
-            <div className="mb-2 text-center text-blue-600 font-semibold animate-pulse">{actionMessage}</div>
-          )}
+        <div style={{ minHeight: 32 }}>
+          {actionMessage && <div className="mb-2 text-center text-blue-600 font-semibold animate-pulse">{actionMessage}</div>}
         </div>
-        {/* Status and winner banners */}
-        {winner && (
-          <div className="mb-4 flex items-center justify-center text-green-700 font-bold text-xl bg-green-100 rounded-lg p-4 shadow animate-bounce">
-            <Sparkles className="h-6 w-6 mr-2 text-yellow-500" />
-            Congratulations! You are a winner!
-          </div>
-        )}
-        {gamePhase === 'waiting' && (
-          <div className="mb-4 text-center text-gray-700 font-semibold">
-            Waiting for players to join...<br />
-            Share the room link to invite friends!
-          </div>
-        )}
-        {gamePhase === 'countdown' && (
-          <div className="mb-4 text-center text-blue-700 font-semibold">
-            Countdown started! Select your card quickly!<br />
-            Game will start automatically in {countdown?.time_left || 0} seconds
-          </div>
-        )}
-        {gamePhase === 'ready' && (
-          <div className="mb-4 text-center text-purple-700 font-semibold">
-            Game is ready to start.<br />
-            {safePlayers.length > 0 && user && safePlayers[0].id === user.id && (
-              <button
-                onClick={handleStartGame}
-                className="mt-2 px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-bold shadow hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
-              >
-                Start Game
-              </button>
-            )}
-            {safePlayers.length > 0 && user && safePlayers[0].id !== user.id && (
-              <span>Waiting for host to start the game...</span>
-            )}
-          </div>
-        )}
-        {gamePhase === 'active' && (
-          <div className="mb-4 text-center text-green-700 font-semibold">
-            Game in progress!
-          </div>
-        )}
-        {gamePhase === 'finished' && (
-          <div className="mb-4 text-center text-gray-700 font-semibold">
-            Game finished. {winner ? 'You won!' : 'Better luck next time!'}
-          </div>
-        )}
+        <GameRoomStatusBanner
+          gamePhase={gamePhase}
+          winner={winner}
+          user={user}
+          players={players}
+          countdown={countdown}
+          handleStartGame={handleStartGame}
+        />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2">
-            {selectedCard && selectedCard.card_data && (
-              <BingoCard 
-                cardData={selectedCard.card_data}
-                cardNumber={selectedCard.card_number}
-                onNumberClick={handleMarkNumber}
-                disabled={!session || session.status !== 'active'}
-              />
-            )}
-            {selectedCard && !selectedCard.card_data && (
-              <div className="text-center text-red-500 font-semibold mt-4">
-                Card data is missing or invalid. Please select another card.
-              </div>
-            )}
-            {selectedCard && (
-              <div className="mt-2 text-center text-gray-600 text-sm">
-                Your Card: #{selectedCard.card_number}
-              </div>
-            )}
+            <GameRoomCardSection selectedCard={selectedCard} session={session} handleMarkNumber={handleMarkNumber} />
           </div>
           <div className="space-y-4">
-            {/* Drawn Numbers Display with animation for latest */}
-            {session && session.status === 'active' && (
-              <div className="bg-white rounded-lg p-4 shadow">
-                <h3 className="font-bold mb-3 text-center">Drawn Numbers</h3>
-                <div className="grid grid-cols-5 gap-2 max-h-40 overflow-y-auto">
-                  {safeDrawnNumbers.map((number, index) => (
-                    <div
-                      key={index}
-                      className={`text-center py-2 rounded font-bold transition-all duration-300
-                        ${number === latestNumber ? 'bg-yellow-300 text-yellow-900 scale-110 shadow-lg animate-bounce' : 'bg-blue-100 text-blue-800'}`}
-                    >
-                      {number}
-                    </div>
-                  ))}
-                </div>
-                {safeDrawnNumbers.length === 0 && (
-                  <p className="text-gray-500 text-center text-sm">No numbers drawn yet</p>
-                )}
-              </div>
-            )}
-
-            {/* Game Controls */}
-            {session && session.status === 'active' && (
-              <div className="space-y-3">
-                <button
-                  onClick={handleDrawNumber}
-                  className="w-full py-3 px-4 bg-purple-500 text-white font-bold rounded-lg shadow-md hover:bg-purple-600 transition-colors"
-                >
-                  <Play className="h-5 w-5 inline mr-2" />
-                  Draw Number
-                </button>
-                <button
-                  onClick={handleClaimBingo}
-                  className="w-full py-3 px-4 bg-green-500 text-white font-bold rounded-lg shadow-md hover:bg-green-600 transition-colors"
-                >
-                  <Check className="h-5 w-5 inline mr-2" />
-                  Claim Bingo
-                </button>
-              </div>
-            )}
-
-            {/* Players List */}
-            <div className="bg-white rounded-lg p-4 shadow">
-              <h3 className="font-bold mb-3">Players ({safePlayers.length})</h3>
-              <ul className="space-y-2">
-                {safePlayers.map(player => (
-                  <li key={player.id} className="flex items-center justify-between">
-                    <span className="text-gray-700">{player.first_name}</span>
-                    {player.id === user?.id && (
-                      <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">You</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <GameRoomDrawnNumbers drawnNumbers={safeDrawnNumbers} latestNumber={latestNumber} />
+            <GameRoomControls session={session} handleDrawNumber={handleDrawNumber} handleClaimBingo={handleClaimBingo} />
+            <GameRoomPlayerList players={safePlayers} user={user} />
           </div>
         </div>
       </main>
+      <GameRoomCardSelectionWrapper
+        showCardSelection={showCardSelection}
+        forceCardSelection={forceCardSelection}
+        session={session}
+        selectedCard={selectedCard}
+        disabledCardNumbers={disabledCardNumbers}
+        countdown={countdown}
+        handleCardSelected={handleCardSelected}
+        onBack={onBack}
+        dispatch={dispatch}
+        userId={user?.id ? Number(user.id) : 0}
+      />
     </div>
   );
 }

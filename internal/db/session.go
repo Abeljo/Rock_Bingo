@@ -98,7 +98,15 @@ func (s *SessionStore) GetSession(ctx context.Context, id int64) (*GameSession, 
 
 // Draw a number for a session
 func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, error) {
-	session, err := s.GetSession(ctx, sessionID)
+	tx, err := s.DB.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// Lock the session row to prevent concurrent draws
+	var session GameSession
+	err = tx.GetContext(ctx, &session, `SELECT * FROM game_sessions WHERE id = $1 FOR UPDATE`, sessionID)
 	if err != nil {
 		return 0, err
 	}
@@ -108,7 +116,17 @@ func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, er
 		return 0, err
 	}
 	if len(remaining) == 0 {
-		return 0, errors.New("no numbers left to draw")
+		// Mark session as completed due to no numbers left
+		_, err := tx.ExecContext(ctx, `
+			UPDATE game_sessions
+			SET status = 'completed', session_end_time = NOW()
+			WHERE id = $1
+		`, sessionID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to end session as draw: %w", err)
+		}
+
+		return 0, errors.New("draw: all numbers drawn, session ended with no winner")
 	}
 
 	var drawn []int
@@ -119,7 +137,8 @@ func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, er
 	// Draw a random number from remaining numbers
 	randIndex := rand.Intn(len(remaining))
 	drawnNumber := remaining[randIndex]
-	// Remove the drawn number from remaining
+
+	// Remove drawn number from remaining
 	remaining = append(remaining[:randIndex], remaining[randIndex+1:]...)
 	drawn = append(drawn, drawnNumber)
 
@@ -133,13 +152,18 @@ func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, er
 		return 0, err
 	}
 
-	// Update DB
-	_, err = s.DB.ExecContext(ctx, `
+	// Update DB inside the transaction
+	_, err = tx.ExecContext(ctx, `
 		UPDATE game_sessions 
-		SET drawn_numbers = $1, remaining_numbers = $2 
+		SET drawn_numbers = $1, remaining_numbers = $2
 		WHERE id = $3
 	`, newDrawn, newRemaining, sessionID)
 	if err != nil {
+		return 0, err
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 
@@ -148,12 +172,19 @@ func (s *SessionStore) DrawNumber(ctx context.Context, sessionID int64) (int, er
 
 // Mark a number on a user's selected card
 func (s *SessionStore) MarkNumberOnCard(ctx context.Context, userID int64, cardNumber int, number int) error {
-	// Get the user's bingo_card for this room/card
+	tx, err := s.DB.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Get the card data with a FOR UPDATE lock to avoid concurrent modifications
 	var cardData []byte
-	err := s.DB.GetContext(ctx, &cardData, `
+	err = tx.GetContext(ctx, &cardData, `
 		SELECT bc.card_data FROM bingo_cards bc
 		JOIN available_cards ac ON ac.room_id = bc.room_id AND ac.card_number = $2
 		WHERE bc.user_id = $1 AND ac.card_number = $2 AND ac.selected_by_user_id = $1
+		FOR UPDATE
 	`, userID, cardNumber)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -174,12 +205,16 @@ func (s *SessionStore) MarkNumberOnCard(ctx context.Context, userID int64, cardN
 		return err
 	}
 
-	// Update only the user's bingo_cards.card_data
-	_, err = s.DB.ExecContext(ctx, `
+	// Update the card data in bingo_cards table
+	_, err = tx.ExecContext(ctx, `
 		UPDATE bingo_cards SET card_data = $1 
 		WHERE user_id = $2 AND room_id = (SELECT room_id FROM available_cards WHERE card_number = $3 AND selected_by_user_id = $2)
 	`, updatedCardData, userID, cardNumber)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // Claim bingo and distribute winnings
@@ -190,9 +225,8 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 	}
 	defer tx.Rollback()
 
-	// Get the room, session, and card info
+	// Get the room ID
 	var roomID int64
-	var sessionID int64
 	err = tx.GetContext(ctx, &roomID, `
 		SELECT room_id FROM available_cards 
 		WHERE selected_by_user_id = $1 AND card_number = $2
@@ -201,6 +235,7 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return err
 	}
 
+	// Lock and get the active game session
 	var session GameSession
 	err = tx.GetContext(ctx, &session, `
 		SELECT * FROM game_sessions 
@@ -210,9 +245,9 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 	if err != nil {
 		return err
 	}
-	sessionID = session.ID
+	sessionID := session.ID
 
-	// Get the card data from available_cards
+	// Get the card data
 	var cardData []byte
 	err = tx.GetContext(ctx, &cardData, `
 		SELECT card_data FROM available_cards 
@@ -222,7 +257,6 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return err
 	}
 
-	// Validate that the card has a winning pattern
 	var card game.Card
 	if err := json.Unmarshal(cardData, &card); err != nil {
 		return fmt.Errorf("failed to parse card data: %v", err)
@@ -233,8 +267,25 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return fmt.Errorf("failed to parse drawn numbers: %v", err)
 	}
 
+	// Handle invalid bingo claim by kicking the user from the room
 	if !card.ValidateBingo(drawnNumbers) {
-		return fmt.Errorf("card does not have a winning bingo pattern")
+		// Unassign the user's selected card(s) in the room
+		_, err = tx.ExecContext(ctx, `
+			UPDATE available_cards 
+			SET selected_by_user_id = NULL, is_selected = FALSE 
+			WHERE room_id = $1 AND selected_by_user_id = $2
+		`, roomID, userID)
+		if err != nil {
+			return fmt.Errorf("invalid bingo: failed to kick user from room: %v", err)
+		}
+
+		// Optionally: log or record this invalid claim for audit or penalties
+		_, _ = tx.ExecContext(ctx, `
+			INSERT INTO invalid_claims (user_id, room_id, claimed_at)
+			VALUES ($1, $2, NOW())
+		`, userID, roomID)
+
+		return fmt.Errorf("invalid bingo claim: user has been removed from the room")
 	}
 
 	// Get room bet amount
@@ -246,21 +297,20 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return err
 	}
 
-	// Get number of players in the room
+	// Count players
 	var playerCount int
 	err = tx.GetContext(ctx, &playerCount, `
 		SELECT COUNT(DISTINCT selected_by_user_id) FROM available_cards 
-		WHERE room_id = $1 AND is_selected = true
+		WHERE room_id = $1 AND is_selected = TRUE
 	`, roomID)
 	if err != nil {
 		return err
 	}
 
-	// Calculate winnings (total pot divided by winners)
 	totalPot := betAmount * float64(playerCount)
-	winningAmount := totalPot // For now, winner takes all
+	winningAmount := totalPot // Winner takes all
 
-	// Get the bingo_card_id from bingo_cards
+	// Get bingo_card_id
 	var bingoCardID int64
 	err = tx.GetContext(ctx, &bingoCardID, `
 		SELECT id FROM bingo_cards 
@@ -270,7 +320,7 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return err
 	}
 
-	// Record the winner
+	// Save winner info
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO winners (session_id, user_id, bingo_card_id, winnings, won_at)
 		VALUES ($1, $2, $3, $4, NOW())
@@ -279,16 +329,17 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return err
 	}
 
-	// Add winnings to user's wallet
+	// Update wallet
 	_, err = tx.ExecContext(ctx, `
-		UPDATE wallets SET balance = balance + $1, updated_at = NOW() 
+		UPDATE wallets 
+		SET balance = balance + $1, updated_at = NOW() 
 		WHERE user_id = $2
 	`, winningAmount, userID)
 	if err != nil {
 		return err
 	}
 
-	// Record transaction
+	// Add transaction log
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO transactions (user_id, type, amount, created_at)
 		VALUES ($1, 'win', $2, NOW())
@@ -297,9 +348,10 @@ func (s *SessionStore) ClaimBingo(ctx context.Context, userID int64, cardNumber 
 		return err
 	}
 
-	// End the session
+	// End session
 	_, err = tx.ExecContext(ctx, `
-		UPDATE game_sessions SET status = 'completed', session_end_time = NOW() 
+		UPDATE game_sessions 
+		SET status = 'completed', session_end_time = NOW() 
 		WHERE id = $1
 	`, sessionID)
 	if err != nil {

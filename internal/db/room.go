@@ -53,21 +53,21 @@ func (s *RoomStore) GetRoom(ctx context.Context, id int64) (*BingoRoom, error) {
 	return &room, nil
 }
 
-// Add global config for min players
+// Global config for min players to start
 type RoomConfig struct {
 	MinPlayersToStart int
 }
 
 var roomConfig = RoomConfig{MinPlayersToStart: 1} // default
 
-// Add a function to set config from env
+// Set config from env
 func SetRoomConfigFromEnv() {
 	if val, ok := lookupEnvInt("MIN_PLAYERS_TO_START"); ok {
 		roomConfig.MinPlayersToStart = val
 	}
 }
 
-// Helper to look up int env vars
+// Helper to parse int env var
 func lookupEnvInt(key string) (int, bool) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -81,9 +81,38 @@ func lookupEnvInt(key string) (int, bool) {
 }
 
 // Join a room (increment current_players and start countdown if first player)
-func (s *RoomStore) JoinRoom(ctx context.Context, roomID int64) error {
-	// Atomically increment current_players and set countdown if needed
-	res, err := s.DB.ExecContext(ctx, `
+// Returns error "user already in room" or "room is full" when appropriate
+func (s *RoomStore) JoinRoom(ctx context.Context, roomID int64, userID int64) error {
+	tx, err := s.DB.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Check if user already joined this room (available_cards table)
+	var exists int
+	err = tx.GetContext(ctx, &exists, `
+		SELECT 1 FROM available_cards WHERE room_id = $1 AND selected_by_user_id = $2 LIMIT 1
+	`, roomID, userID)
+	if err == nil && exists == 1 {
+		return fmt.Errorf("user already in room")
+	}
+
+	// Lock the room row FOR UPDATE to prevent race conditions
+	var room BingoRoom
+	err = tx.GetContext(ctx, &room, `
+		SELECT * FROM bingo_rooms WHERE id = $1 FOR UPDATE
+	`, roomID)
+	if err != nil {
+		return err
+	}
+
+	if room.CurrentPlayers >= room.MaxPlayers {
+		return fmt.Errorf("room is full")
+	}
+
+	// Increment player count and start countdown if conditions met
+	_, err = tx.ExecContext(ctx, `
 		UPDATE bingo_rooms
 		SET
 			current_players = current_players + 1,
@@ -96,22 +125,24 @@ func (s *RoomStore) JoinRoom(ctx context.Context, roomID int64) error {
 				ELSE game_start_time
 			END,
 			updated_at = NOW()
-		WHERE id = $1 AND current_players < max_players
+		WHERE id = $1
 	`, roomID, roomConfig.MinPlayersToStart)
 	if err != nil {
-		log.Printf("[JoinRoom] Error updating room: %v", err)
 		return err
 	}
-	if rows, _ := res.RowsAffected(); rows > 0 {
-		var room BingoRoom
-		err = s.DB.GetContext(ctx, &room, `SELECT * FROM bingo_rooms WHERE id = $1`, roomID)
-		if err == nil {
-			if room.CountdownStart != nil {
-				log.Printf("[JoinRoom] Countdown started for room %d at %v, game starts at %v", roomID, room.CountdownStart, room.GameStartTime)
-			}
-		}
+
+	// Assign an available card to the user
+	_, err = tx.ExecContext(ctx, `
+		UPDATE available_cards
+		SET selected_by_user_id = $1, is_selected = true
+		WHERE room_id = $2 AND is_selected = false
+		LIMIT 1
+	`, userID, roomID)
+	if err != nil {
+		return err
 	}
-	return nil
+
+	return tx.Commit()
 }
 
 // Leave a room (decrement current_players)

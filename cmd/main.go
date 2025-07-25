@@ -5,6 +5,7 @@ import (
 	"os"
 	"rockbingo/internal/api"
 	"rockbingo/internal/db"
+	"rockbingo/internal/game"
 	"rockbingo/internal/telegrambot"
 
 	"github.com/gofiber/fiber/v2"
@@ -30,6 +31,9 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer database.Close()
+
+	// Start stuck room recovery goroutine
+	game.StartStuckRoomRecovery(database.DB) // Use .DB to get *sql.DB from sqlx.DB
 
 	// Initialize stores
 	userStore := db.NewUserStore(database)
@@ -67,6 +71,7 @@ func main() {
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-User-ID",
 		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
 	}))
+
 	// Register all API routes
 	api.RegisterRoutes(app)
 
